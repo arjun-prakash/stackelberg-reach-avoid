@@ -20,3 +20,9 @@ If you would like to contribute, follow these steps:
 - Set up pre-commit via `pre-commit install`
 
 PRs may require accompanying PRs in [the documentation repo](https://github.com/Farama-Foundation/Gymnasium/tree/main/docs).
+
+## Work
+- Implemented value iteration
+- Got it working with modified frozen lake
+- tried to get Coax working (didn't work, reaised git issue)
+- tried to get cliff-walk working, doesn't currently work with gymnasium
