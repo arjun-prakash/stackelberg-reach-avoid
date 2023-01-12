@@ -1,5 +1,5 @@
-import gym
-from gym import spaces
+import gymnasium as gym
+from gymnasium import spaces
 import pygame
 import numpy as np
 
@@ -10,6 +10,9 @@ class GridWorldEnv(gym.Env):
     def __init__(self, render_mode=None, size=5):
         self.size = size  # The size of the square grid
         self.window_size = 512  # The size of the PyGame window
+
+        self.Na = 4
+        self.Ns = self.size**2
 
         # Observations are dictionaries with the agent's and the target's location.
         # Each location is encoded as an element of {0, ..., `size`}^2, i.e. MultiDiscrete([size, size]).
@@ -22,6 +25,9 @@ class GridWorldEnv(gym.Env):
 
         # We have 4 actions, corresponding to "right", "up", "left", "down", "right"
         self.action_space = spaces.Discrete(4)
+
+        self.P = {s: {a: [] for a in range(self.Na)} for s in range(self.Ns)}
+
 
         """
         The following dictionary maps abstract actions from `self.action_space` to 
