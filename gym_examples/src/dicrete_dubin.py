@@ -9,7 +9,7 @@ class DubinsCarEnv(gym.Env):
     The car must reach a goal and avoid an obstacle.
     """
 
-    def __init__(self, speed=1, turning_radius=1, goal_state=np.array([5,5,0]), obstacle_state=np.array([3,3,0]), num_tilings=8, tile_resolution=0.1, num_bins=8):
+    def __init__(self, speed=1, turning_radius=1, goal_state=np.array([5,5,0]), obstacle_state=np.array([3,3,0]), num_tilings=2, tile_resolution=0.1, num_bins=8):
         """
         Initialize the DubinsCar environment.
         :param speed: The speed of the car (default: 1)
@@ -123,7 +123,10 @@ class ValueIteration:
         return self.q_table
 
 
-vi = ValueIteration(DubinsCarEnv(), discount_factor=0.99, max_iterations=1000, threshold=1e-8)
+env = DubinsCarEnv()
+env.reset()
+
+vi = ValueIteration(env, discount_factor=0.99, max_iterations=1000, threshold=1e-8)
 values = vi.run()
 q_table = vi.q()
 
@@ -137,3 +140,12 @@ while not done:
     action = policy[state_code]
     state, reward, done, _ = env.step(action)
     env.render()
+
+
+"""No, the P attribute is not needed in this case. In the modified version of the value_iteration function, the step() method is used to transition to the next state and calculate the reward.
+
+The step() method takes an action as an input and returns a tuple of the next state, reward, done, and additional information. The step() method uses the car's dynamics and the current state to calculate the next state, reward, and other information. The function then uses the returned information to update the value function.
+
+The P attribute is typically used in tabular MDPs to store the transition probabilities and rewards for each state and action. But in this case, since the state space is continuous and the transition probabilities and rewards are not known in closed form, the step() method of the environment is used to calculate them on-the-fly.
+
+So, in summary, you don't need an env.P attribute when you use a continuous state space problem, but you need to have a good understanding of the dynamics of the system and to use the step method properly to estimate the next state and the reward."""
