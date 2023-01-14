@@ -17,7 +17,7 @@ class DubinsCarEnv(gym.Env):
         self.min_distance_to_obstacle = 0.1 # minimum distance to obstacle to consider the task as done
         self.timestep = 0.1 # timestep in seconds
         self.v_max = 1 # maximum speed
-        self.omega_max = 1 # maximum angular velocity
+        self.omega_max = 1 # maximum angular velocity (radians)
         
     def step(self, action):
         """
@@ -92,9 +92,25 @@ class DubinsCarEnv(gym.Env):
         plt.savefig("mygraph.png")
        # plt.pause(0.1)
 
+    def state_to_obs(self, state):
+        """
+        Convert the state to an observation format that the TileCoder class can understand
+
+        Parameters
+        ----------
+        state : tuple of float
+            The state to convert
+
+        Returns
+        -------
+        obs : numpy array of shape (3,)
+            The observation in the format (x, y, theta)
+        """
+        x, y, theta = state
+        obs = np.array([x, y, theta])
+        return obs
 
 
-import numpy as np
 
 class TileCoder:
     def __init__(self, ntiles, ntilings, state_bounds):
@@ -106,16 +122,16 @@ class TileCoder:
         ntiles : list of int
             Number of tiles for each dimension of the state space
         ntilings : int
-            Number of tilings to use
+            Number of tilings
         state_bounds : numpy array of shape (state_dim, 2)
-            lower and upper bounds of each dimension of the state space
+            Lower and upper bounds for each dimension of the state space
         """
         self.ntiles = ntiles
         self.ntilings = ntilings
+        self.state_dim = len(ntiles)
         self.state_bounds = state_bounds
-        self.state_dim = state_bounds.shape[0]
-        self.offset = np.random.rand(self.state_dim) # random offset for each tiling
-        self.width = (self.state_bounds[:, 1] - self.state_bounds[:, 0]) / self.ntiles # width of each tile
+        self.width = (state_bounds[:, 1] - state_bounds[:, 0]) / ntiles
+        self.offset = state_bounds[:, 0]
 
     def get_tile_indices(self, state):
         """
@@ -131,17 +147,68 @@ class TileCoder:
         tile_indices : list of int
             List of tile indices for the given state
         """
+        state = np.append(state, state[-1] % (2 * np.pi))
         tile_indices = []
         for tiling in range(self.ntilings):
-            offset = self.offset[:, None] * tiling
-            indices = np.floor((state - offset) / self.width).astype(int)
-            # clamp indices to range [0, ntiles - 1]
-            indices = np.maximum(indices, 0)
-            indices = np.minimum(indices, self.ntiles - 1)
-            # convert indices to a single integer
-            index = np.sum(indices * np.prod(self.ntiles[:len(indices) - 1]) * self.ntilings + tiling)
+            indices = []
+            for i in range(self.state_dim):
+                index = np.floor((state[i] - self.offset[i]) / self.width[i]).astype(int)
+                index = max(0, index)
+                if i == self.state_dim-1:
+                    index = min(index, self.ntiles[-1]-1)
+                indices.append(index)
+            index = np.sum(indices) + tiling * np.prod(self.ntiles)
             tile_indices.append(index)
         return tile_indices
+
+
+
+
+
+
+class ValueIteration:
+    def __init__(self, env, tc, discount_factor=0.99, theta=1e-8):
+        """
+        Initialize the value iteration algorithm
+
+        Parameters
+        ----------
+        env : gym.Env
+            The environment to solve
+        tc : TileCoder
+            The tile coder to use for discretizing the state space
+        discount_factor : float, optional
+            The discount factor, by default 0.99
+        theta : float, optional
+            The stopping criterion, by default 1e-8
+        """
+        self.env = env
+        self.tc = tc
+        self.discount_factor = discount_factor
+        self.theta = theta
+        self.n_states = np.prod(tc.ntiles) * tc.ntilings
+        self.values = np.zeros((self.n_states))
+        self.policy = np.zeros((self.n_states))
+        
+    def solve(self):
+        """
+        Solve the environment using value iteration
+        """
+        while True:
+            delta = 0
+            for state in range(self.n_states):
+                state_indices = self.tc.get_tile_indices(self.env.state_to_obs(state))
+                v = self.values[state_indices]
+                action_values = []
+                for action in range(self.env.action_space.n):
+                    next_state_indices, reward, done, _ = self.env.step(action)
+                    action_values.append(reward + self.discount_factor * self.values[next_state_indices])
+                new_v = np.max(action_values)
+                delta = max(delta, np.abs(v - new_v))
+                self.values[state_indices] = new_v
+                self.policy[state_indices] = np.argmax(action_values)
+            if delta < self.theta:
+                break
 
 
 
@@ -155,6 +222,11 @@ class TileCoder:
 #     env.render()
 
 import gym
+
+# Create the environment
+# Create the environment
+# Create the environment
+
 
 # Create the environment
 env = DubinsCarEnv()
@@ -177,3 +249,12 @@ tile_indices = tc.get_tile_indices(state)
 
 print("Tile indices:", tile_indices)
 
+# Create the value iteration object
+vi = ValueIteration(env, tc)
+
+# Solve the environment
+vi.solve()
+
+# Print the final values and policy
+print("Final values:", vi.values)
+print("Final policy:", vi.policy)
