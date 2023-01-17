@@ -165,6 +165,58 @@ class TileCoder:
 
 
 
+class DiscreteDubinsEnv(DubinsCarEnv):
+    def __init__(self, ntiles, ntilings, state_bounds):
+        super().__init__()
+        self.tc = TileCoder(ntiles, ntilings, state_bounds)
+        self.ntiles = ntiles
+        self.width = (state_bounds[:, 1] - state_bounds[:, 0]) / ntiles
+        self.offset = state_bounds[:, 0]
+
+    def state_to_obs(self, state):
+        """
+        Convert the state index to observation format
+
+        Parameters
+        ----------
+        state : int
+            The state index to convert
+
+        Returns
+        -------
+        obs : numpy array of shape (3,)
+            The observation in the format (x, y, theta)
+        """
+        x,y,theta = state%np.prod(self.ntiles[:2]), state%np.prod(self.ntiles[:1]), state%np.prod(self.ntiles[2])
+        x = self.offset[0]+self.width[0]*x
+        y = self.offset[1]+self.width[1]*y
+        theta = self.offset[2]+self.width[2]*theta
+        obs = np.array([x, y, theta])
+        return obs
+    
+    def obs_to_state(self, obs):
+        """
+        Convert the observation format to the corresponding state index
+
+        Parameters
+        ----------
+        obs : numpy array of shape (3,)
+            The observation in the format (x, y, theta)
+
+        Returns
+        -------
+        state : int
+            The state index corresponding to the observation
+        """
+        x, y, theta = obs
+        x_index = int((x - self.offset[0]) / self.width[0])
+        y_index = int((y - self.offset[1]) / self.width[1])
+        theta_index = int((theta - self.offset[2]) / self.width[2])
+        state = x_index + y_index * self.ntiles[0] + theta_index * self.ntiles[0] * self.ntiles[1]
+        return state
+
+
+
 
 class ValueIteration:
     def __init__(self, env, tc, discount_factor=0.99, theta=1e-8):
