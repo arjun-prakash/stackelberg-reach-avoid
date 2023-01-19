@@ -56,7 +56,7 @@ class DubinsCarEnv(gym.Env):
         return np.append(self.car_position, [self.car_orientation]), reward, done, {}
 
 
-    def state_step(self, state, action):
+    def state_action_step(self, state, action):
         """
         Perform the action and return the next state, reward and done flag
         """
@@ -71,14 +71,14 @@ class DubinsCarEnv(gym.Env):
 
 
         car_orientation = state[2]
-        car_position = state[:2]
+        car_position = np.array(state[:2])
         # update car position and orientation
         car_orientation += omega * self.timestep
         car_position[0] += v * np.cos(car_orientation) * self.timestep
         car_position[1] += v * np.sin(car_orientation) * self.timestep
 
         # check if the car is out of bounds
-        if car_position[0] < observation_space.low[0] or car_position[0] > self.observation_space.high[0] or car_position[1] < self.observation_space.low[1] or car_position[1] > self.observation_space.high[1]:
+        if car_position[0] < self.observation_space.low[0] or car_position[0] > self.observation_space.high[0] or car_position[1] < self.observation_space.low[1] or car_position[1] > self.observation_space.high[1]:
             return np.append(car_position, [car_orientation]), 0, True, {}
         # calculate distance to goal and obstacle
         dist_goal = np.linalg.norm(car_position - self.goal_position)
@@ -260,9 +260,9 @@ class TileCoder:
         k = np.zeros((self.num_tilings,))
 
         for tiling_idx in range(self.num_tilings):
-            i[tiling_idx] = np.floor((state[0] + self.offsets[tiling_idx][0]) / self.x_tile_size)
-            j[tiling_idx] = np.floor((state[1] + self.offsets[tiling_idx][1]) / self.y_tile_size)
-            k[tiling_idx] = np.floor((state[2] + self.offsets[tiling_idx][2]) / self.theta_tile_size)
+            i[tiling_idx] = min(self.num_tilings - 1, np.floor((state[0] / self.x_tile_size) + self.offsets[tiling_idx][0]))
+            j[tiling_idx] = min(self.num_tilings - 1, np.floor((state[1] / self.y_tile_size) + self.offsets[tiling_idx][1]))
+            k[tiling_idx] = min(self.num_tilings - 1, np.floor((state[2]  / self.theta_tile_size + self.offsets[tiling_idx][2])) )
 
         return i.astype(int), j.astype(int), k.astype(int)
 
@@ -345,10 +345,10 @@ class ValueIteration:
                 for y in range(self.tc.num_tiles):
                     for theta in range(self.tc.num_tiles):
                         for tile in range(self.tc.num_tilings):
-
+                            state = tile_coder.continuize(x,y,theta,tile)
                             old_value = self.value_table[x, y, theta, tile].copy()
                             for action in range(self.env.action_space.n):
-                                next_state, reward, done, _ = self.env.step(action)
+                                next_state, reward, done, _ = self.env.state_action_step(state, action)
                                 next_x, next_y, next_theta = self.tc.discretize(next_state)
                                 self.value_table[x, y, theta, tile] = reward + self.discount_factor * np.max(self.value_table[next_x[tile], next_y[tile], next_theta[tile], tile])
                             delta = max(delta, np.abs(old_value - self.value_table[x, y, theta, tile]).max())
@@ -363,6 +363,7 @@ class ValueIteration:
         for x in range(self.tc.num_tiles):
             for y in range(self.tc.num_tiles):
                 for theta in range(self.tc.num_tiles):
+
                     actions_value = []
                     for action in range(self.env.action_space.n):
                         next_state, reward, done, _ = self.env.step(action)
@@ -432,4 +433,4 @@ tile_coder = TileCoder(num_tiles, x_range, y_range, theta_range, num_tilings)
 
 vi = ValueIteration(env, tile_coder)
 vi.solve()
-print(vi.get_policy())
+#print(vi.get_policy())
