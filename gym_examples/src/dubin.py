@@ -326,7 +326,7 @@ class TileCoder:
 
 
 
-
+DELTAS = []
 
 
 class ValueIteration:
@@ -351,8 +351,12 @@ class ValueIteration:
                                 next_state, reward, done, _ = self.env.state_action_step(state, action)
                                 next_x, next_y, next_theta = self.tc.discretize(next_state)
                                 self.value_table[x, y, theta, tile] = reward + self.discount_factor * np.max(self.value_table[next_x[tile], next_y[tile], next_theta[tile], tile])
-                            delta = max(delta, np.abs(old_value - self.value_table[x, y, theta, tile]).max())
-                            print(delta)
+                            #delta = max(delta, np.abs(old_value - self.value_table[x, y, theta, tile]))
+                            delta += np.abs(old_value - self.value_table[x, y, theta, tile])
+
+
+            print(delta)
+            print(i)
             if delta < self.epsilon:
                 print(f'Value iteration converged at iteration {i+1}')
                 break
@@ -363,12 +367,16 @@ class ValueIteration:
         for x in range(self.tc.num_tiles):
             for y in range(self.tc.num_tiles):
                 for theta in range(self.tc.num_tiles):
-
                     actions_value = []
                     for action in range(self.env.action_space.n):
-                        next_state, reward, done, _ = self.env.step(action)
-                        next_x, next_y, next_theta = self.tc.discretize(next_state)
-                        actions_value.append(np.mean(reward + self.discount_factor * self.value_table[next_x, next_y, next_theta, :]))
+                        actions_value_tiles = []
+                        for tile in range(self.tc.num_tilings):
+                            state = tile_coder.continuize(x,y,theta,tile)
+                            next_state, reward, done, _ = self.env.state_action_step(state, action)
+                            next_x, next_y, next_theta = self.tc.discretize(next_state)
+                            actions_value_tiles.append(self.value_table[next_x[tile], next_y[tile], next_theta[tile], tile])
+                        actions_value_tiles = np.array(actions_value_tiles)
+                        actions_value.append(np.mean(reward + self.discount_factor * actions_value_tiles))
                     policy[x, y, theta] = np.argmax(actions_value)
         return policy
 
@@ -399,12 +407,12 @@ import numpy as np
 env = DubinsCarEnv()
 
 # Create an instance of the TileCoder
-num_tiles = 20
+num_tiles = 3
 x_range = env.observation_space.low[0], env.observation_space.high[0]
 y_range = env.observation_space.low[1], env.observation_space.high[1]
 theta_range = env.observation_space.low[2], env.observation_space.high[2]
 
-num_tilings = 1
+num_tilings = 2
 tile_coder = TileCoder(num_tiles, x_range, y_range, theta_range, num_tilings)
 
 # # Run the agent for some episodes
@@ -430,7 +438,9 @@ tile_coder = TileCoder(num_tiles, x_range, y_range, theta_range, num_tilings)
 #     # Render the trajectory of the Dubins car on the discretized state space
 #     tile_coder.render(state, goal_pos, obstacle_pos)
 
-
+from rich import print
 vi = ValueIteration(env, tile_coder)
 vi.solve()
-#print(vi.get_policy())
+p = vi.get_policy()
+print(p)
+print('done')
