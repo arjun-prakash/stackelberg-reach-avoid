@@ -406,7 +406,7 @@ import numpy as np
 
 env = DubinsCarEnv()
 
-# Create an instance of the TileCoder
+# Create an instance of the TileCod/watcher
 num_tiles = 3
 x_range = env.observation_space.low[0], env.observation_space.high[0]
 y_range = env.observation_space.low[1], env.observation_space.high[1]
