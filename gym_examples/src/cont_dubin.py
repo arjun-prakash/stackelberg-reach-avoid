@@ -16,12 +16,13 @@ env = DubinsCarEnv()
 state = env.reset()
 X = []
 y = []
-for i in range(5000):
+for i in range(10000):
+    print(i)
     state = env.reset()
-    action = env.action_space.sample()
-    X.append(state)
-    r = env.sample(state, action, 0.9)
-    y.append(r)
+    for action in range(env.action_space.n):
+        X.append(state)
+        r = env.sample(state, action, 0.9)
+        y.append(r)
 
 X = np.array(X)
 y = np.array(y)
@@ -29,9 +30,11 @@ y = np.array(y)
 #params are defined *implicitly* in haiku
 def forward(X):
     l1 = hk.Linear(10)(X)
-    l2 = hk.Linear(1)(l1)
+    l2 = hk.Linear(20)(l1)
 
-    return l2.ravel()
+    l3 = hk.Linear(1)(l2)
+
+    return l3.ravel()
 
 
 # a transformed haiku function consists of an 'init' and an 'apply' function
@@ -57,10 +60,10 @@ def update(params, grads):
     return jax.tree_map(lambda p, g: p - 0.05 * g, params, grads)
 
 
-optimizer = optax.sgd(learning_rate=1e-2)
+optimizer = optax.adam(learning_rate=1e-2)
 
 opt_state = optimizer.init(params)
-for epoch in range(1000):
+for epoch in range(500):
     loss, grads = jax.value_and_grad(loss_fn)(params,X=X,y=y)
     print("progress:", "epoch:", epoch, "loss",loss)
     updates, opt_state = optimizer.update(grads, opt_state, params)
@@ -90,15 +93,17 @@ print("estimate", estimate)
 env = DubinsCarEnv()
 state = env.reset()
 done = False
-max_iter = 1000
+max_iter = 100
 counter = 0
 while (not done) and (counter < max_iter):
     counter+=1
     possible_actions = []
     for a in range(env.action_space.n):
-        estimate = forward(X=state, params=params)
-        possible_actions.append(estimate)
+        next_state, _, done, _ = env.state_action_step(state, a)
+        estimate = forward(X=next_state, params=params)
+        possible_actions.append(estimate[0])
     action = np.argmax(np.array(possible_actions))
+    print(action, possible_actions )
 
     state, reward, done, _ = env.step(action)
     env.render()
