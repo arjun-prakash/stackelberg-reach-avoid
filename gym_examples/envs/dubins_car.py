@@ -191,3 +191,141 @@ class DubinsCarEnv(gym.Env):
         obs = np.array([x, y, theta])
         return obs
 
+
+
+class TwoPlayerDubinsCarEnv(DubinsCarEnv):
+    metadata = {'render.modes': ['human']}
+
+    def __init__(self):
+        super().__init__()
+
+
+        self.players = ['attacker', 'defender']
+
+        self.action_space = {'attacker':spaces.Discrete(3), 'defender':spaces.Discrete(3)}
+
+        self.observation_space= {'attacker':spaces.Box(low=np.array([-5, -5, -np.pi]), high=np.array([5, 5, np.pi]), dtype=np.float32), 
+                                'defender':spaces.Box(low=np.array([-5, -5, -np.pi]), high=np.array([5, 5, np.pi]), dtype=np.float32)}
+
+
+
+        self.car_position = {'attacker': np.array([0,0,0]), 'defender':np.array([0,0,0])}
+
+        self.goal_position = np.array([0,0]) # position of the goal
+        self.capture_radius = 0.1 # radius of the obstacle
+
+
+
+        self.min_distance_to_goal = 0.1 # minimum distance to goal to consider the task as done
+        self.min_distance_to_obstacle = 0.1 # minimum distance to obstacle to consider the task as done
+
+        self.timestep = 0.1 # timestep in seconds
+        self.v_max = 1 # maximum speed
+        self.omega_max = .524  # maximum angular velocity (radians)
+        self.images = []
+        
+
+    def reset(self):
+        """
+        Reset the environment and return the initial state
+        """
+        self.car_position['attacker'] = self.observation_space['attacker'].sample()
+        self.car_position['defender'] = self.observation_space['defender'].sample()
+
+        self.goal_position = np.random.randn(2)
+        return self.car_position
+    
+
+
+    def step(self, action, player):
+        """
+        Perform the action and return the next state, reward and done flag
+        action: dict{attacker:int, defender:int}
+        """
+
+
+            
+        v = self.v_max # speed of the car
+        omega = self.omega_max # angular velocity of the car
+        if action == 0: # turn left
+            omega = - omega
+        elif action == 2: # turn right
+            omega = omega
+        else: # action 1 : straight
+            omega = 0
+
+        # update car position and orientation
+        self.car_position[player][2] += omega * self.timestep
+        self.car_position[player][0] += v * np.cos(self.car_position[player][2]) * self.timestep
+        self.car_position[player][1] += v * np.sin(self.car_position[player][2]) * self.timestep
+
+        # check if the car is out of bounds
+        if self.car_position[player][0] < self.observation_space[player].low[0] or self.car_position[player][0] > self.observation_space[player].high[0] or self.car_position[player][1] < self.observation_space[player].low[1] or self.car_position[player][1] > self.observation_space[player].high[1]:
+            print('out of bounds')
+            return self.car_position, (0,0), True, {}
+        
+        
+       
+        # calculate distance to goal and obstacle
+        dist_goal = np.linalg.norm(self.car_position['attacker'][:2] - self.goal_position)
+
+        dist_capture = np.linalg.norm(self.car_position['attacker'][:2] - self.car_position['defender'][:2]) - self.obstacle_radius
+        if dist_capture < 0:
+            print('wat')
+            return self.car_position, (-1000,1000), True, {}
+        # calculate reward
+        reward = (-dist_goal, dist_goal)
+
+        # check if done
+        done = False
+        if dist_goal < self.min_distance_to_goal:
+            done = True
+            print('captured')
+
+        return self.car_position, reward, done, {}
+
+
+    def render(self, mode='human', close=False):
+        """
+        Render the environment for human viewing
+        """
+        import matplotlib.pyplot as plt
+        import matplotlib
+        import io
+        import imageio
+        matplotlib.use('Agg')
+
+
+
+        fig = plt.figure()
+        plt.clf()
+        plt.xlim([-5, 5])
+        plt.ylim([-5, 5])
+
+    
+
+        attacker = plt.Circle((self.car_position['attacker'][0], self.car_position['attacker'][1]), self.capture_radius, color='b', fill=True)
+        defender = plt.Circle((self.car_position['defender'][0], self.car_position['defender'][1]), self.capture_radius, color='r', fill=True)
+
+
+        # draw goal
+        goal = plt.Circle((self.goal_position[0], self.goal_position[1]), self.min_distance_to_goal, color='g', fill=False)
+
+        # draw obstacle
+        plt.gca().add_artist(attacker)
+        plt.gca().add_artist(defender)
+        plt.gca().add_artist(goal)
+
+        #print('saving')
+        # save current figure to images list
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png')
+        buf.seek(0)
+        self.images.append(np.array(imageio.v2.imread(buf)))
+        plt.close()
+
+    def make_gif(self):
+        import imageio
+
+        imageio.mimsave('two_player_animation.gif', self.images, fps=30)
+
