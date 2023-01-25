@@ -9,7 +9,7 @@ class DubinsCarEnv(gym.Env):
     def __init__(self):
         self.action_space = spaces.Discrete(3)
         self.observation_space = spaces.Box(low=np.array([-5, -5, -np.pi]), high=np.array([5, 5, np.pi]), dtype=np.float32)        
-        self.goal_position = np.array([-2,-2]) # position of the goal
+        self.goal_position = np.array([0,0]) # position of the goal
         self.obstacle_position = np.array([2,2]) # position of the obstacle
         self.obstacle_radius = 0.1 # radius of the obstacle
         self.car_position = np.array([0,0]) # position of the car
@@ -42,13 +42,13 @@ class DubinsCarEnv(gym.Env):
         # check if the car is out of bounds
         if self.car_position[0] < self.observation_space.low[0] or self.car_position[0] > self.observation_space.high[0] or self.car_position[1] < self.observation_space.low[1] or self.car_position[1] > self.observation_space.high[1]:
             print('out of bounds')
-            return np.append(self.car_position, [self.car_orientation]), -1000000, True, {}
+            return np.append(self.car_position, [self.car_orientation]), -10, True, {}
         # calculate distance to goal and obstacle
         dist_goal = np.linalg.norm(self.car_position - self.goal_position)
         dist_obstacle = np.linalg.norm(self.car_position - self.obstacle_position) - self.obstacle_radius
         if dist_obstacle < 0:
             print('wat')
-            return np.append(self.car_position, [self.car_orientation]), -1000000, True, {}
+            return np.append(self.car_position, [self.car_orientation]), -10, True, {}
         # calculate reward
         reward = -dist_goal 
 
@@ -57,6 +57,7 @@ class DubinsCarEnv(gym.Env):
         if dist_goal < self.min_distance_to_goal:
             done = True
             print('hit goal')
+            reward=10
 
         print('other', reward)
         return np.append(self.car_position, [self.car_orientation]), reward, done, {}
@@ -85,22 +86,23 @@ class DubinsCarEnv(gym.Env):
         # check if the car is out of bounds
         if car_position[0] < self.observation_space.low[0] or car_position[0] > self.observation_space.high[0] or car_position[1] < self.observation_space.low[1] or car_position[1] > self.observation_space.high[1]:
             print("out of bounds")
-            return np.append(car_position, [car_orientation]), -1000, True, {}
+            return np.append(car_position, [car_orientation]), -10, True, {}
         # calculate distance to goal and obstacle
         dist_goal = np.linalg.norm(car_position - self.goal_position)
         dist_obstacle = np.linalg.norm(car_position - self.obstacle_position) - self.obstacle_radius
         if dist_obstacle < 0:
             print('wat')
-            return np.append(car_position, [car_orientation]), -1000, True, {}
+            return np.append(car_position, [car_orientation]), -10, True, {}
         # calculate reward
         reward = -dist_goal
 
         # check if done
         done = False
         if dist_goal < self.min_distance_to_goal:
-            print('goal', reward)
             done = True
-            reward = 1000
+            reward = 10
+            print('goal', reward)
+
         print('other', reward)
         return np.append(car_position, [car_orientation]), reward, done, {}
 
@@ -126,7 +128,7 @@ class DubinsCarEnv(gym.Env):
         """
         self.car_position = self.observation_space.sample()[:2]
         self.car_orientation = self.observation_space.sample()[2]
-        self.goal_position = np.array([-2,-2]) 
+        self.goal_position = np.array([0,0]) 
         self.obstacle_position = np.array([2,2]) 
         return np.append(self.car_position, [self.car_orientation])
     

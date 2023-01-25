@@ -16,7 +16,7 @@ env = DubinsCarEnv()
 state = env.reset()
 X = []
 y = []
-for i in range(10000):
+for i in range(50000):
     print(i)
     state = env.reset()
     for action in range(env.action_space.n):
@@ -29,12 +29,8 @@ y = np.array(y)
 
 #params are defined *implicitly* in haiku
 def forward(X):
-    l1 = hk.Linear(10)(X)
-    l2 = hk.Linear(20)(l1)
-
-    l3 = hk.Linear(1)(l2)
-
-    return l3.ravel()
+    l1 = hk.Linear(1)(X)
+    return l1.ravel()
 
 
 # a transformed haiku function consists of an 'init' and an 'apply' function
@@ -63,7 +59,7 @@ def update(params, grads):
 optimizer = optax.adam(learning_rate=1e-2)
 
 opt_state = optimizer.init(params)
-for epoch in range(500):
+for epoch in range(2000):
     loss, grads = jax.value_and_grad(loss_fn)(params,X=X,y=y)
     print("progress:", "epoch:", epoch, "loss",loss)
     updates, opt_state = optimizer.update(grads, opt_state, params)
