@@ -216,15 +216,15 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         self.car_position = {'attacker': np.array([0,0,0]), 'defender':np.array([0,0,0])}
 
         self.goal_position = np.array([0,0]) # position of the goal
-        self.capture_radius = 0.1 # radius of the obstacle
+        self.capture_radius = 0.5 # radius of the obstacle
 
 
 
-        self.min_distance_to_goal = 0.1 # minimum distance to goal to consider the task as done
+        self.min_distance_to_goal = 1 # minimum distance to goal to consider the task as done
         self.min_distance_to_obstacle = 0.1 # minimum distance to obstacle to consider the task as done
 
-        self.timestep = 0.1 # timestep in seconds
-        self.v_max = 1 # maximum speed
+        self.timestep = 0.2 # timestep in seconds
+        self.v_max = 0.2 # maximum speed
         self.omega_max = .524  # maximum angular velocity (radians)
         self.images = []
         
@@ -236,7 +236,8 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         self.car_position['attacker'] = self.observation_space['attacker'].sample()
         self.car_position['defender'] = self.observation_space['defender'].sample()
 
-        self.goal_position = np.random.randn(2)
+        self.goal_position = np.array([0,0]) 
+        print('reset',self.car_position)
         return self.car_position
     
 
@@ -263,28 +264,33 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         self.car_position[player][0] += v * np.cos(self.car_position[player][2]) * self.timestep
         self.car_position[player][1] += v * np.sin(self.car_position[player][2]) * self.timestep
 
+        # # check if the car is out of bounds
+        # if self.car_position[player][0] < self.observation_space[player].low[0] or self.car_position[player][0] > self.observation_space[player].high[0] or self.car_position[player][1] < self.observation_space[player].low[1] or self.car_position[player][1] > self.observation_space[player].high[1]:
+        #     print('out of bounds')
+        #     return self.car_position, -10, True, {}
+
         # check if the car is out of bounds
-        if self.car_position[player][0] < self.observation_space[player].low[0] or self.car_position[player][0] > self.observation_space[player].high[0] or self.car_position[player][1] < self.observation_space[player].low[1] or self.car_position[player][1] > self.observation_space[player].high[1]:
+        if self.car_position['attacker'][0] < self.observation_space['attacker'].low[0] or self.car_position['attacker'][0] > self.observation_space['attacker'].high[0] or self.car_position['attacker'][1] < self.observation_space['attacker'].low[1] or self.car_position['attacker'][1] > self.observation_space[player].high[1]:
             print('out of bounds')
-            return self.car_position, (0,0), True, {}
+            return self.car_position, -10, True, {}
         
         
        
         # calculate distance to goal and obstacle
         dist_goal = np.linalg.norm(self.car_position['attacker'][:2] - self.goal_position)
 
-        dist_capture = np.linalg.norm(self.car_position['attacker'][:2] - self.car_position['defender'][:2]) - self.obstacle_radius
+        dist_capture = np.linalg.norm(self.car_position['attacker'][:2] - self.car_position['defender'][:2]) - self.capture_radius
         if dist_capture < 0:
-            print('wat')
-            return self.car_position, (-1000,1000), True, {}
+            print('captured')
+            return self.car_position, -10, True, {}
         # calculate reward
-        reward = (-dist_goal, dist_goal)
+        reward = -dist_goal
 
         # check if done
         done = False
         if dist_goal < self.min_distance_to_goal:
             done = True
-            print('captured')
+            print('gaol!')
 
         return self.car_position, reward, done, {}
 
@@ -313,9 +319,10 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         car_position[player][1] += v * np.sin(car_position[player][2]) * self.timestep
 
         # check if the car is out of bounds
-        if car_position[player][0] < self.observation_space[player].low[0] or car_position[player][0] > self.observation_space[player].high[0] or car_position[player][1] < self.observation_space[player].low[1] or car_position[player][1] > self.observation_space[player].high[1]:
-            print('out of bounds')
-            return car_position, np.array([0,0]), True, {}
+        if car_position['attacker'][0] < self.observation_space['attacker'].low[0] or car_position['attacker'][0] > self.observation_space[player].high[0] or car_position['attacker'][1] < self.observation_space[player].low[1] or car_position['attacker'][1] > self.observation_space[player].high[1]:
+            print('out of bounds', player)
+            print(car_position[player])
+            return car_position, -10, True, {}
         
         
        
@@ -324,16 +331,17 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         dist_capture = np.linalg.norm(car_position['attacker'][:2] - car_position['defender'][:2]) - self.obstacle_radius
         if dist_capture < 0:
-            print('wat')
-            return car_position, np.array([-1000,1000]), True, {}
+            print('captured')
+            return car_position, -10, True, {}
         # calculate reward
-        reward = np.array([-dist_goal, dist_goal])
+        reward =  -dist_goal
 
         # check if done
         done = False
         if dist_goal < self.min_distance_to_goal:
             done = True
-            print('captured')
+            reward = 10
+            print('goal!')
 
         return car_position, reward, done, {}
 
@@ -376,7 +384,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
     
 
-        attacker = plt.Circle((self.car_position['attacker'][0], self.car_position['attacker'][1]), self.capture_radius, color='b', fill=True)
+        attacker = plt.Circle((self.car_position['attacker'][0], self.car_position['attacker'][1]), 0.1, color='b', fill=True)
         defender = plt.Circle((self.car_position['defender'][0], self.car_position['defender'][1]), self.capture_radius, color='r', fill=True)
 
 
