@@ -204,7 +204,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         super().__init__()
 
 
-        self.players = ['attacker', 'defender']
+        self.players = ['defender', 'attacker']
 
         self.action_space = {'attacker':spaces.Discrete(3), 'defender':spaces.Discrete(3)}
 
@@ -235,6 +235,8 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         """
         self.car_position['attacker'] = self.observation_space['attacker'].sample()
         self.car_position['defender'] = self.observation_space['defender'].sample()
+        #self.car_position['defender'] = np.array([2,2,2])
+
 
         self.goal_position = np.array([0,0]) 
         print('reset',self.car_position)
