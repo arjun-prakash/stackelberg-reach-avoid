@@ -59,7 +59,7 @@ class DubinsCarEnv(gym.Env):
             print('hit goal')
             reward=10
 
-        print('other', reward)
+        #print('other', reward)
         return np.append(self.car_position, [self.car_orientation]), reward, done, {}
 
 
@@ -85,13 +85,13 @@ class DubinsCarEnv(gym.Env):
 
         # check if the car is out of bounds
         if car_position[0] < self.observation_space.low[0] or car_position[0] > self.observation_space.high[0] or car_position[1] < self.observation_space.low[1] or car_position[1] > self.observation_space.high[1]:
-            print("out of bounds")
+            #print("out of bounds")
             return np.append(car_position, [car_orientation]), -10, True, {}
         # calculate distance to goal and obstacle
         dist_goal = np.linalg.norm(car_position - self.goal_position)
         dist_obstacle = np.linalg.norm(car_position - self.obstacle_position) - self.obstacle_radius
         if dist_obstacle < 0:
-            print('wat')
+            #print('wat')
             return np.append(car_position, [car_orientation]), -10, True, {}
         # calculate reward
         reward = -dist_goal
@@ -101,9 +101,9 @@ class DubinsCarEnv(gym.Env):
         if dist_goal < self.min_distance_to_goal:
             done = True
             reward = 10
-            print('goal', reward)
+            #print('goal', reward)
 
-        print('other', reward)
+        #print('other', reward)
         return np.append(car_position, [car_orientation]), reward, done, {}
 
 
@@ -117,6 +117,23 @@ class DubinsCarEnv(gym.Env):
         expected_next_reward = np.max(next_rewards)
 
         return reward + gamma*expected_next_reward
+
+
+    def sample_value_iter(self,X_batch, forward, params, gamma):
+        y_hat = []
+        for state in X_batch:
+            next_rewards = []
+            for action in range(self.action_space.n):
+
+                state_, reward, done, _ = self.state_action_step(state, action)
+                discounted_reward = reward + gamma*forward(X=state, params=params)
+
+                next_rewards.append(discounted_reward)
+            best_next_reward = np.max(next_rewards)
+            y_hat.append(best_next_reward)
+
+        return np.array(y_hat)
+
 
 
 
