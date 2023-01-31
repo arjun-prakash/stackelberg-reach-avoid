@@ -122,15 +122,15 @@ class DubinsCarEnv(gym.Env):
     def sample_value_iter(self,X_batch, forward, params, gamma):
         y_hat = []
         for state in X_batch:
-            next_rewards = []
+            values = []
             for action in range(self.action_space.n):
 
                 state_, reward, done, _ = self.state_action_step(state, action)
-                discounted_reward = reward + gamma*forward(X=state, params=params)
+                value = reward + gamma*forward(X=state_, params=params)
 
-                next_rewards.append(discounted_reward)
-            best_next_reward = np.max(next_rewards)
-            y_hat.append(best_next_reward)
+                values.append(value)
+            max_value = np.max(values)
+            y_hat.append(max_value)
 
         return np.array(y_hat)
 
@@ -339,8 +339,8 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         # check if the car is out of bounds
         if car_position['attacker'][0] < self.observation_space['attacker'].low[0] or car_position['attacker'][0] > self.observation_space[player].high[0] or car_position['attacker'][1] < self.observation_space[player].low[1] or car_position['attacker'][1] > self.observation_space[player].high[1]:
-            print('out of bounds', player)
-            print(car_position[player])
+            #print('out of bounds', player)
+            #print(car_position[player])
             return car_position, -10, True, {}
         
         
@@ -350,7 +350,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         dist_capture = np.linalg.norm(car_position['attacker'][:2] - car_position['defender'][:2]) - self.obstacle_radius
         if dist_capture < 0:
-            print('captured')
+            #print('captured')
             return car_position, -10, True, {}
         # calculate reward
         reward =  -dist_goal
@@ -360,7 +360,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         if dist_goal < self.min_distance_to_goal:
             done = True
             reward = 10
-            print('goal!')
+            #print('goal!')
 
         return car_position, reward, done, {}
 
@@ -378,6 +378,38 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             expected_next_reward = np.mean(np.array(next_rewards), axis=0)
 
         return reward + gamma*expected_next_reward
+
+
+    def decode_state(self,x):
+        state = {'attacker':np.array([x[0], x[1],x[2]]), 'defender':np.array([x[3], x[4], x[5]])}
+        return state
+
+
+    def sample_value_iter(self,X_batch, forward, params, gamma):
+        y_hat = []
+        for state in X_batch:
+            possible_actions = []
+            state = self.decode_state(state)
+            for d_action in range(self.action_space['defender'].n):
+                state_ , reward, done, info = self.state_action_step(state, d_action, 'defender')
+                for a_action in range(self.action_space['attacker'].n):
+                    next_state, reward, _, _ = self.state_action_step(state_, a_action, 'attacker')
+                    possible_actions.append([d_action, a_action, reward])
+
+            pa = np.array(possible_actions)[:,2].reshape(3,3)
+            #reward =  np.min(np.max(pa.T,axis=0))
+            best_attacker_moves = np.argmax(pa.T,axis=0)
+            best_defender_move =  np.argmin(np.max(pa.T,axis=0))
+            best_attacker_move = best_attacker_moves[best_defender_move]
+            reward = pa[best_defender_move][best_attacker_move]
+
+
+
+            input = np.hstack([next_state['attacker'], next_state['defender']])
+            value = reward + gamma*forward(X=input, params=params)
+            y_hat.append(value)
+
+        return np.array(y_hat)
 
 
 
