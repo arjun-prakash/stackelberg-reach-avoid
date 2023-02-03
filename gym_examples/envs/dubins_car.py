@@ -16,8 +16,8 @@ class DubinsCarEnv(gym.Env):
         self.car_orientation = 0 # orientation of the car in radians
         self.min_distance_to_goal = 1 # minimum distance to goal to consider the task as done
         self.min_distance_to_obstacle = 0.1 # minimum distance to obstacle to consider the task as done
-        self.timestep = 0.5 # timestep in seconds
-        self.v_max = 0.5 # maximum speed
+        self.timestep = 1 # timestep in seconds
+        self.v_max = 0.1 # maximum speed
         self.omega_max = 0.524  # maximum angular velocity (radians)
         self.images = []
         
@@ -42,22 +42,22 @@ class DubinsCarEnv(gym.Env):
         # check if the car is out of bounds
         if self.car_position[0] < self.observation_space.low[0] or self.car_position[0] > self.observation_space.high[0] or self.car_position[1] < self.observation_space.low[1] or self.car_position[1] > self.observation_space.high[1]:
             print('out of bounds')
-            return np.append(self.car_position, [self.car_orientation]), -10, True, {}
+            return np.append(self.car_position, [self.car_orientation]), -1, True, {}
         # calculate distance to goal and obstacle
-        dist_goal = np.linalg.norm(self.car_position - self.goal_position)
+        dist_goal = np.linalg.norm(self.car_position - self.goal_position) - self.min_distance_to_goal
         dist_obstacle = np.linalg.norm(self.car_position - self.obstacle_position) - self.obstacle_radius
         if dist_obstacle < 0:
             print('wat')
-            return np.append(self.car_position, [self.car_orientation]), -10, True, {}
+            return np.append(self.car_position, [self.car_orientation]), -1, True, {}
         # calculate reward
-        reward = -dist_goal 
+        reward = 0
 
         # check if done
         done = False
-        if dist_goal < self.min_distance_to_goal:
+        if dist_goal < 0:
             done = True
             print('hit goal')
-            reward=10
+            reward=1
 
         #print('other', reward)
         return np.append(self.car_position, [self.car_orientation]), reward, done, {}
@@ -86,21 +86,21 @@ class DubinsCarEnv(gym.Env):
         # check if the car is out of bounds
         if car_position[0] < self.observation_space.low[0] or car_position[0] > self.observation_space.high[0] or car_position[1] < self.observation_space.low[1] or car_position[1] > self.observation_space.high[1]:
             #print("out of bounds")
-            return np.append(car_position, [car_orientation]), -10, True, {}
+            return np.append(car_position, [car_orientation]), -1, True, {}
         # calculate distance to goal and obstacle
-        dist_goal = np.linalg.norm(car_position - self.goal_position)
+        dist_goal = np.linalg.norm(car_position - self.goal_position) - self.min_distance_to_goal
         dist_obstacle = np.linalg.norm(car_position - self.obstacle_position) - self.obstacle_radius
         if dist_obstacle < 0:
             #print('wat')
-            return np.append(car_position, [car_orientation]), -10, True, {}
+            return np.append(car_position, [car_orientation]), -1, True, {}
         # calculate reward
-        reward = -dist_goal
+        reward = 0
 
         # check if done
         done = False
-        if dist_goal < self.min_distance_to_goal:
+        if dist_goal < 0:
             done = True
-            reward = 10
+            reward = 1
             #print('goal', reward)
 
         #print('other', reward)
@@ -118,7 +118,6 @@ class DubinsCarEnv(gym.Env):
 
         return reward + gamma*expected_next_reward
 
-
     def sample_value_iter(self,X_batch, forward, params, gamma):
         y_hat = []
         for state in X_batch:
@@ -126,7 +125,10 @@ class DubinsCarEnv(gym.Env):
             for action in range(self.action_space.n):
 
                 state_, reward, done, _ = self.state_action_step(state, action)
-                value = reward + gamma*forward(X=state_, params=params)
+                if done:
+                    value = np.array([reward])
+                else:
+                    value = reward + gamma*forward(X=state_, params=params)
 
                 values.append(value)
             max_value = np.max(values)
@@ -225,8 +227,8 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         self.action_space = {'attacker':spaces.Discrete(3), 'defender':spaces.Discrete(3)}
 
-        self.observation_space= {'attacker':spaces.Box(low=np.array([-5, -5, -np.pi]), high=np.array([5, 5, np.pi]), dtype=np.float32), 
-                                'defender':spaces.Box(low=np.array([-5, -5, -np.pi]), high=np.array([5, 5, np.pi]), dtype=np.float32)}
+        self.observation_space= {'attacker':spaces.Box(low=np.array([-3, -3, -np.pi]), high=np.array([3, 3, np.pi]), dtype=np.float32), 
+                                'defender':spaces.Box(low=np.array([-3, -3, -np.pi]), high=np.array([3, 3, np.pi]), dtype=np.float32)}
 
 
 
@@ -240,8 +242,8 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         self.min_distance_to_goal = 1 # minimum distance to goal to consider the task as done
         self.min_distance_to_obstacle = 0.1 # minimum distance to obstacle to consider the task as done
 
-        self.timestep = 0.2 # timestep in seconds
-        self.v_max = 0.2 # maximum speed
+        self.timestep = 0.1 # timestep in seconds
+        self.v_max = 0.1 # maximum speed
         self.omega_max = .524  # maximum angular velocity (radians)
         self.images = []
         
@@ -303,7 +305,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             print('captured')
             return self.car_position, -10, True, {}
         # calculate reward
-        reward = -dist_goal
+        reward = -dist_goal - 0.5*dist_capture
 
         # check if done
         done = False
@@ -353,7 +355,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             #print('captured')
             return car_position, -10, True, {}
         # calculate reward
-        reward =  -dist_goal
+        reward =  -dist_goal - 0.5*dist_capture
 
         # check if done
         done = False
@@ -413,6 +415,33 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
 
 
+    # def sample_value_iter2(self,X_batch, forward, params, gamma):
+    #     y_hat = []
+    #     X_batch_2player = []
+
+    #     for state in X_batch:
+    #         values1 = []
+    #         values2 = []
+    #         for action in range(self.action_space['attacker'].n):
+
+    #             next_state1, reward, done, _ = self.state_action_step(state, action 'defender')
+    #             next_state2, reward, done, _ = self.state_action_step(state, action 'attacker')
+
+    #             value1 = reward + gamma*forward(X=next_state1, params=params)
+    #             value2 = reward + gamma*forward(X=next_state2, params=params)
+
+
+    #             values1.append(value1)
+    #             values2.append(value2)
+    #         min_value = np.min(values1)
+    #         max_value = np.max(values2)
+
+    #         y_hat.append(min_value)
+    #         y_hat.append(max_value)
+
+    #     return np.array(y_hat)
+
+
             
 
 
@@ -459,4 +488,8 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         import imageio
 
         imageio.mimsave('two_player_animation.gif', self.images, fps=30)
+
+
+
+        
 
