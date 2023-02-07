@@ -14,9 +14,9 @@ class DubinsCarEnv(gym.Env):
         self.obstacle_radius = 0.1 # radius of the obstacle
         self.state = np.array([0,0,0,1]) # position of the car
         self.min_distance_to_goal = 1 # minimum distance to goal to consider the task as done
-        self.min_distance_to_obstacle = 0.1 # minimum distance to obstacle to consider the task as done
+        self.min_distance_to_obstacle = 0.5 # minimum distance to obstacle to consider the task as done
         self.timestep = 1 # timestep in seconds
-        self.v_max = 0.1 # maximum speed
+        self.v_max = 0.2 # maximum speed
         self.omega_max = 0.524  # maximum angular velocity (radians)
         self.images = []
         #self.reset()
@@ -47,6 +47,9 @@ class DubinsCarEnv(gym.Env):
             omega = 0
 
 
+
+
+
         if update_env:
             next_state = self.state.copy() #save copy of the state
             state = self.state
@@ -54,9 +57,14 @@ class DubinsCarEnv(gym.Env):
             next_state = state.copy() #save copy of the state
 
         #update the state
+
         next_state[2] += omega * self.timestep
+        next_state[2] = (next_state[2] + np.pi) % (2 * np.pi) - np.pi
+
+
         next_state[0] += v * np.cos(self.state[2]) * self.timestep
         next_state[1] += v * np.sin(self.state[2]) * self.timestep
+
 
         
             
@@ -82,11 +90,12 @@ class DubinsCarEnv(gym.Env):
     #    # calculate distance to goal and obstacle
     #     dist_obstacle = np.linalg.norm(state[:2] - self.obstacle_position) - self.obstacle_radius
     #     if dist_obstacle < 0:
-    #         self.v_max = -self.v_max
 
     #         done = False
-    #         reward = -10
+    #         reward = -1
     #         info = {}
+    #         state[2] = np.random.uniform(low=-np.pi, high=np.pi)
+
     #         if update_env:
     #             self.update_environment(state)
     #         return state, reward, done, info #make it end game, with -1
@@ -347,6 +356,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             omega = omega
         else: # action 1 : straight
             omega = 0
+
 
         car_position = state        
         # update car position and orientation
