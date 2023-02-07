@@ -77,7 +77,7 @@ class DubinsCarEnv(gym.Env):
             done = False
             reward = -1
             info = {}
-            state[2] = np.random.uniform(low=-np.pi, high=np.pi)
+            state[2] = ((next_state[2] - np.pi) + np.pi) % (2 * np.pi) - np.pi #np.random.uniform(low=-np.pi, high=np.pi)
 
 
             if update_env:
@@ -87,18 +87,18 @@ class DubinsCarEnv(gym.Env):
 
 
        
-    #    # calculate distance to goal and obstacle
-    #     dist_obstacle = np.linalg.norm(state[:2] - self.obstacle_position) - self.obstacle_radius
-    #     if dist_obstacle < 0:
+       # calculate distance to goal and obstacle
+        dist_obstacle = np.linalg.norm(state[:2] - self.obstacle_position) - self.obstacle_radius
+        if dist_obstacle < 0:
 
-    #         done = False
-    #         reward = -1
-    #         info = {}
-    #         state[2] = np.random.uniform(low=-np.pi, high=np.pi)
+            done = False
+            reward = -1
+            info = {}
+            state[2] = ((next_state[2] - np.pi) + np.pi) % (2 * np.pi) - np.pi #np.random.uniform(low=-np.pi, high=np.pi)
 
-    #         if update_env:
-    #             self.update_environment(state)
-    #         return state, reward, done, info #make it end game, with -1
+            if update_env:
+                self.update_environment(state)
+            return state, reward, done, info #make it end game, with -1
 
 
 
