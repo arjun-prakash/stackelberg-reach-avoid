@@ -11,10 +11,9 @@ class DubinsCarEnv(gym.Env):
         self.observation_space = spaces.Box(low=np.array([-4, -4, -np.pi]), high=np.array([4, 4, np.pi]), dtype=np.float32)        
         self.goal_position = np.array([0,0]) # position of the goal
         self.obstacle_position = np.array([2,2]) # position of the obstacle
-        self.obstacle_radius = 0.1 # radius of the obstacle
+        self.obstacle_radius = 0.5 # radius of the obstacle
         self.state = np.array([0,0,0,1]) # position of the car
         self.min_distance_to_goal = 1 # minimum distance to goal to consider the task as done
-        self.min_distance_to_obstacle = 0.5 # minimum distance to obstacle to consider the task as done
         self.timestep = 1 # timestep in seconds
         self.v_max = 0.2 # maximum speed
         self.omega_max = 0.524  # maximum angular velocity (radians)
