@@ -8,16 +8,17 @@ class DubinsCarEnv(gym.Env):
 
     def __init__(self):
         self.action_space = spaces.Discrete(3)
-        self.observation_space = spaces.Box(low=np.array([-4, -4, -np.pi]), high=np.array([4, 4, np.pi]), dtype=np.float32)        
+        self.observation_space = spaces.Box(low=np.array([-4, -4, 0]), high=np.array([4, 4, 2*np.pi]), dtype=np.float32)        
         self.goal_position = np.array([0,0]) # position of the goal
         self.obstacle_position = np.array([2,2]) # position of the obstacle
         self.obstacle_radius = 0.5 # radius of the obstacle
-        self.state = np.array([0,0,0,1]) # position of the car
+        self.state = np.array([0,0,0]) # position of the car
         self.min_distance_to_goal = 1 # minimum distance to goal to consider the task as done
         self.timestep = 1 # timestep in seconds
-        self.v_max = 0.2 # maximum speed
-        self.omega_max = 0.524  # maximum angular velocity (radians)
+        self.v_max = 0.1 # maximum speed
+        self.omega_max = 65 * np.pi/180  # maximum angular velocity (radians)
         self.images = []
+        self.reward = 10
         #self.reset()
         
 
@@ -58,7 +59,7 @@ class DubinsCarEnv(gym.Env):
         #update the state
 
         next_state[2] += omega * self.timestep
-        next_state[2] = (next_state[2] + np.pi) % (2 * np.pi) - np.pi
+        next_state[2] = (next_state[2]) % (2 * np.pi) 
 
 
         next_state[0] += v * np.cos(self.state[2]) * self.timestep
@@ -74,9 +75,9 @@ class DubinsCarEnv(gym.Env):
         if next_state[0] < self.observation_space.low[0] or next_state[0] > self.observation_space.high[0] or next_state[1] < self.observation_space.low[1] or next_state[1] > self.observation_space.high[1]:
             
             done = False
-            reward = -1
+            reward = -self.reward 
             info = {}
-            state[2] = ((next_state[2] - np.pi) + np.pi) % (2 * np.pi) - np.pi #np.random.uniform(low=-np.pi, high=np.pi)
+            state[2] = ((state[2] - np.pi)) % (2 * np.pi) #np.random.uniform(low=-np.pi, high=np.pi)
 
 
             if update_env:
@@ -87,13 +88,13 @@ class DubinsCarEnv(gym.Env):
 
        
        # calculate distance to goal and obstacle
-        dist_obstacle = np.linalg.norm(state[:2] - self.obstacle_position) - self.obstacle_radius
+        dist_obstacle = np.linalg.norm(next_state[:2] - self.obstacle_position) - self.obstacle_radius
         if dist_obstacle < 0:
 
             done = False
-            reward = -1
+            reward = -self.reward 
             info = {}
-            state[2] = ((next_state[2] - np.pi) + np.pi) % (2 * np.pi) - np.pi #np.random.uniform(low=-np.pi, high=np.pi)
+            state[2] = ((state[2] - np.pi)) % (2 * np.pi)#np.random.uniform(low=-np.pi, high=np.pi)
 
             if update_env:
                 self.update_environment(state)
@@ -108,7 +109,7 @@ class DubinsCarEnv(gym.Env):
             #print('distance', dist_goal)
 
             done = True
-            reward = 1
+            reward = self.reward 
             info ={}
             if update_env:
                 self.update_environment(state)
@@ -172,7 +173,17 @@ class DubinsCarEnv(gym.Env):
         self.goal_position = np.array([0,0]) 
         self.obstacle_position = np.array([2,2]) 
         return self.state
-    
+
+    def set(self, x, y,theta):
+        """
+        Reset the environment and return the initial state
+        """
+        self.state = np.array([x, y, theta], dtype=self.observation_space.dtype)
+
+        self.goal_position = np.array([0,0]) 
+        self.obstacle_position = np.array([2,2]) 
+        return self.state
+        
     def render(self, mode='human', close=False):
         """
         Render the environment for human viewing
@@ -187,8 +198,8 @@ class DubinsCarEnv(gym.Env):
 
         fig = plt.figure()
         plt.clf()
-        plt.xlim([-5, 5])
-        plt.ylim([-5, 5])
+        plt.xlim([-4, 4])
+        plt.ylim([-4, 4])
 
         # draw car
         car = plt.Circle((self.state[0], self.state[1]), 0.1, color='b', fill=True)
