@@ -15,7 +15,7 @@ class DubinsCarEnv(gym.Env):
         self.state = np.array([0,0,0]) # position of the car
         self.min_distance_to_goal = 1 # minimum distance to goal to consider the task as done
         self.timestep = 1 # timestep in seconds
-        self.v_max = 0.1 # maximum speed
+        self.v_max = 0.25 # maximum speed
         self.omega_max = 65 * np.pi/180  # maximum angular velocity (radians)
         self.images = []
         self.reward = 10
@@ -88,17 +88,17 @@ class DubinsCarEnv(gym.Env):
 
        
        # calculate distance to goal and obstacle
-        dist_obstacle = np.linalg.norm(next_state[:2] - self.obstacle_position) - self.obstacle_radius
-        if dist_obstacle < 0:
+        # dist_obstacle = np.linalg.norm(next_state[:2] - self.obstacle_position) - self.obstacle_radius
+        # if dist_obstacle < 0:
 
-            done = False
-            reward = -self.reward 
-            info = {}
-            state[2] = ((state[2] - np.pi)) % (2 * np.pi)#np.random.uniform(low=-np.pi, high=np.pi)
+        #     done = True
+        #     reward = -self.reward 
+        #     info = {}
+        #     state[2] = ((state[2] - np.pi)) % (2 * np.pi)#np.random.uniform(low=-np.pi, high=np.pi)
 
-            if update_env:
-                self.update_environment(state)
-            return state, reward, done, info #make it end game, with -1
+        #     if update_env:
+        #         self.update_environment(state)
+        #     return state, reward, done, info #make it end game, with -1
 
 
 
@@ -193,6 +193,9 @@ class DubinsCarEnv(gym.Env):
         import io
         import imageio
         matplotlib.use('Agg')
+        from matplotlib import cm
+
+
 
 
 
@@ -202,7 +205,7 @@ class DubinsCarEnv(gym.Env):
         plt.ylim([-4, 4])
 
         # draw car
-        car = plt.Circle((self.state[0], self.state[1]), 0.1, color='b', fill=True)
+        #car = plt.Circle((self.state[0], self.state[1]), 0.1, color='b', fill=True)
 
 
         # draw goal
@@ -212,7 +215,18 @@ class DubinsCarEnv(gym.Env):
         obstacle = plt.Circle((self.obstacle_position[0], self.obstacle_position[1]), self.obstacle_radius, color='r', fill=False)
         plt.gca().add_artist(obstacle)
         plt.gca().add_artist(goal)
-        plt.gca().add_artist(car)
+        #plt.gca().add_artist(car)
+
+        arrow_len = self.v_max
+        # Calculate arrow components
+        arrow_dx = arrow_len * np.cos(self.state[2])
+        arrow_dy = arrow_len * np.sin(self.state[2])
+
+
+
+        plt.quiver(self.state[0], self.state[1], arrow_dx, arrow_dy, angles='xy', scale_units='xy', scale=1, width=0.01)
+        plt.jet()
+
 
         
 
