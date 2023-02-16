@@ -87,18 +87,18 @@ class DubinsCarEnv(gym.Env):
 
 
        
-       # calculate distance to goal and obstacle
-        # dist_obstacle = np.linalg.norm(next_state[:2] - self.obstacle_position) - self.obstacle_radius
-        # if dist_obstacle < 0:
+    #    # calculate distance to goal and obstacle
+    #     dist_obstacle = np.linalg.norm(next_state[:2] - self.obstacle_position) - self.obstacle_radius
+    #     if dist_obstacle < 0:
 
-        #     done = True
-        #     reward = -self.reward 
-        #     info = {}
-        #     state[2] = ((state[2] - np.pi)) % (2 * np.pi)#np.random.uniform(low=-np.pi, high=np.pi)
+    #         done = True
+    #         reward = -self.reward 
+    #         info = {}
+    #         state[2] = ((state[2] - np.pi)) % (2 * np.pi)#np.random.uniform(low=-np.pi, high=np.pi)
 
-        #     if update_env:
-        #         self.update_environment(state)
-        #     return state, reward, done, info #make it end game, with -1
+    #         if update_env:
+    #             self.update_environment(state)
+    #         return state, reward, done, info #make it end game, with -1
 
 
 
@@ -140,6 +140,7 @@ class DubinsCarEnv(gym.Env):
         expected_next_reward = np.max(next_rewards)
 
         return expected_next_reward 
+
 
     def sample_value_iter(self,X_batch, forward, params, gamma):
         y_hat = []
