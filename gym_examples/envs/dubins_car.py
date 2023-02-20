@@ -73,7 +73,8 @@ class DubinsCarEnv(gym.Env):
 
         # check if the car is out of bounds
         if next_state[0] < self.observation_space.low[0] or next_state[0] > self.observation_space.high[0] or next_state[1] < self.observation_space.low[1] or next_state[1] > self.observation_space.high[1]:
-            
+            print('hit wall')
+
             done = True
             reward = -self.reward 
             info = {}
@@ -90,7 +91,6 @@ class DubinsCarEnv(gym.Env):
        # calculate distance to goal and obstacle
         dist_obstacle = np.linalg.norm(next_state[:2] - self.obstacle_position) - self.obstacle_radius
         if dist_obstacle < 0:
-
             done = True
             reward = -self.reward 
             info = {}
