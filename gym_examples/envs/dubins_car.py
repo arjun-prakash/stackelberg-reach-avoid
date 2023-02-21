@@ -7,10 +7,10 @@ class DubinsCarEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
     def __init__(self):
-        self.action_space = spaces.Discrete(3)
+        self.action_space = spaces.Discrete(4)
         self.observation_space = spaces.Box(low=np.array([-4, -4, 0]), high=np.array([4, 4, 2*np.pi]), dtype=np.float32)        
         self.goal_position = np.array([0,0]) # position of the goal
-        self.obstacle_position = np.array([2,2]) # position of the obstacle
+        self.obstacle_position = np.array([-2,2]) # position of the obstacle
         self.obstacle_radius = 0.5 # radius of the obstacle
         self.state = np.array([0,0,0]) # position of the car
         self.min_distance_to_goal = 1 # minimum distance to goal to consider the task as done
@@ -18,7 +18,7 @@ class DubinsCarEnv(gym.Env):
         self.v_max = 0.25 # maximum speed
         self.omega_max = 65 * np.pi/180  # maximum angular velocity (radians)
         self.images = []
-        self.reward = 10
+        self.reward = 1
         #self.reset()
         
 
@@ -43,8 +43,12 @@ class DubinsCarEnv(gym.Env):
             omega = -omega
         elif action == 2: # turn right
             omega = omega
-        else: # action 1 : straight
+        elif action ==1: # action 1 : straight
             omega = 0
+        else: # action 3: reverse
+            omega = -np.pi
+
+            
 
 
 
@@ -73,8 +77,6 @@ class DubinsCarEnv(gym.Env):
 
         # check if the car is out of bounds
         if next_state[0] < self.observation_space.low[0] or next_state[0] > self.observation_space.high[0] or next_state[1] < self.observation_space.low[1] or next_state[1] > self.observation_space.high[1]:
-            print('hit wall')
-
             done = True
             reward = -self.reward 
             info = {}
@@ -170,8 +172,8 @@ class DubinsCarEnv(gym.Env):
         Reset the environment and return the initial state
         """
         self.state = self.observation_space.sample()
-        self.goal_position = np.array([0,0]) 
-        self.obstacle_position = np.array([2,2]) 
+        self.goal_position = self.goal_position
+        self.obstacle_position = self.obstacle_position
         return self.state
 
     def set(self, x, y,theta):
@@ -180,8 +182,8 @@ class DubinsCarEnv(gym.Env):
         """
         self.state = np.array([x, y, theta], dtype=self.observation_space.dtype)
 
-        self.goal_position = np.array([0,0]) 
-        self.obstacle_position = np.array([2,2]) 
+        self.goal_position = self.goal_position
+        self.obstacle_position = self.obstacle_position
         return self.state
         
     def render(self, mode='human', close=False):
