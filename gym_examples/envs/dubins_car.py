@@ -7,7 +7,7 @@ class DubinsCarEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
     def __init__(self):
-        self.action_space = spaces.Discrete(4)
+        self.action_space = spaces.Discrete(3)
         self.observation_space = spaces.Box(low=np.array([-4, -4, 0]), high=np.array([4, 4, 2*np.pi]), dtype=np.float32)        
         self.goal_position = np.array([0,0]) # position of the goal
         self.obstacle_position = np.array([-2,2]) # position of the obstacle
@@ -48,6 +48,7 @@ class DubinsCarEnv(gym.Env):
         else: # action 3: reverse
             omega = -np.pi
 
+
             
 
 
@@ -69,7 +70,8 @@ class DubinsCarEnv(gym.Env):
         next_state[0] += v * np.cos(self.state[2]) * self.timestep
         next_state[1] += v * np.sin(self.state[2]) * self.timestep
 
-
+        # print('state', state)
+        # print('next_state', next_state)
         
             
 
@@ -80,7 +82,9 @@ class DubinsCarEnv(gym.Env):
             done = True
             reward = -self.reward 
             info = {}
-            state[2] = ((state[2] - np.pi)) % (2 * np.pi) #np.random.uniform(low=-np.pi, high=np.pi)
+            #state[2] = ((state[2] - np.pi)) % (2 * np.pi) #np.random.uniform(low=-np.pi, high=np.pi)
+            state = next_state
+
 
 
             if update_env:
@@ -90,17 +94,18 @@ class DubinsCarEnv(gym.Env):
 
 
        
-       # calculate distance to goal and obstacle
-        dist_obstacle = np.linalg.norm(next_state[:2] - self.obstacle_position) - self.obstacle_radius
-        if dist_obstacle < 0:
-            done = True
-            reward = -self.reward 
-            info = {}
-            state[2] = ((state[2] - np.pi)) % (2 * np.pi)#np.random.uniform(low=-np.pi, high=np.pi)
+    #    # calculate distance to goal and obstacle
+    #     dist_obstacle = np.linalg.norm(next_state[:2] - self.obstacle_position) - self.obstacle_radius
+    #     if dist_obstacle < 0:
+    #         done = True
+    #         reward = -self.reward 
+    #         info = {}
+    #         #state[2] = ((state[2] - np.pi)) % (2 * np.pi)#np.random.uniform(low=-np.pi, high=np.pi)
+    #         state = next_state
 
-            if update_env:
-                self.update_environment(state)
-            return state, reward, done, info #make it end game, with -1
+    #         if update_env:
+    #             self.update_environment(state)
+    #         return state, reward, done, info #make it end game, with -1
 
 
 
@@ -108,7 +113,6 @@ class DubinsCarEnv(gym.Env):
         dist_goal = np.linalg.norm(state[:2] - self.goal_position) - self.min_distance_to_goal
         if dist_goal < 0:
             state = next_state
-            #print('distance', dist_goal)
 
             done = True
             reward = self.reward 
@@ -143,24 +147,52 @@ class DubinsCarEnv(gym.Env):
 
         return expected_next_reward 
 
+
+    def get_reward(self, state):
+
+        rewards = []
+        for a in range(self.action_space.n):
+            _, reward_, done, _ = self.step(state, a)
+            rewards.append(reward_)
+        max_reward = np.max(rewards)
+
+        return max_reward 
+
+
+
     def sample_value_iter(self,X_batch, forward, params, gamma):
         y_hat = []
         for state in X_batch:
+            state = self.decode_helper(state)
             values = []
             for action in range(self.action_space.n):
-
+                #print(state)
                 state_, reward, done, _ = self.step(state, action, update_env=False)
-
-                if done:
-                    value = reward
-                else:
-                    value = reward + gamma*forward(X=state_, params=params)
+                state_ = self.encode_helper(state_)
+                # if done:
+                #     value = reward
+                # else:
+                value = reward + gamma*forward(X=state_, params=params)
 
                 values.append(value)
             max_value = np.max(values)
             y_hat.append(max_value)
 
         return np.array(y_hat)
+    
+    def decode_helper(self, encoded_state):
+        x = encoded_state[0]
+        y = encoded_state[1]
+        theta = np.arctan2(encoded_state[3], encoded_state[2]) #y,x 
+        theta = np.mod(theta, 2*np.pi)
+        return np.array([x,y,theta])
+    
+    def encode_helper(self, state):
+        x = state[0]
+        y = state[1]
+        theta = state[2]
+        return np.array([x,y,np.cos(theta),np.sin(theta)])
+        
 
 
 
