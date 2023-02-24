@@ -8,7 +8,7 @@ class DubinsCarEnv(gym.Env):
 
     def __init__(self):
         self.action_space = spaces.Discrete(3)
-        self.observation_space = spaces.Box(low=np.array([-4, -4, 0]), high=np.array([4, 4, 2*np.pi]), dtype=np.float32)        
+        self.observation_space = spaces.Box(low=np.array([-4, -4, 0]), high=np.array([4, 4, 2*np.pi]), dtype=np.float64)        
         self.goal_position = np.array([0,0]) # position of the goal
         self.obstacle_position = np.array([-2,2]) # position of the obstacle
         self.obstacle_radius = 0.5 # radius of the obstacle
@@ -43,7 +43,7 @@ class DubinsCarEnv(gym.Env):
             omega = -omega
         elif action == 2: # turn right
             omega = omega
-        elif action ==1: # action 1 : straight
+        elif action == 1: # action 1 : straight
             omega = 0
         else: # action 3: reverse
             omega = -np.pi
@@ -67,8 +67,8 @@ class DubinsCarEnv(gym.Env):
         next_state[2] = (next_state[2]) % (2 * np.pi) 
 
 
-        next_state[0] += v * np.cos(self.state[2]) * self.timestep
-        next_state[1] += v * np.sin(self.state[2]) * self.timestep
+        next_state[0] += v * np.cos(next_state[2]) * self.timestep
+        next_state[1] += v * np.sin(next_state[2]) * self.timestep
 
         # print('state', state)
         # print('next_state', next_state)
@@ -88,8 +88,8 @@ class DubinsCarEnv(gym.Env):
 
 
             if update_env:
-                self.update_environment(state)
-            return state, reward, done, info #make it end game, with -1
+                self.update_environment(next_state)
+            return next_state, reward, done, info #make it end game, with -1
 
 
 
@@ -110,16 +110,16 @@ class DubinsCarEnv(gym.Env):
 
 
             
-        dist_goal = np.linalg.norm(state[:2] - self.goal_position) - self.min_distance_to_goal
-        if dist_goal < 0:
+        dist_goal = np.linalg.norm(next_state[:2] - self.goal_position) - self.min_distance_to_goal
+        if dist_goal <= 0:
             state = next_state
 
             done = True
             reward = self.reward 
             info ={}
             if update_env:
-                self.update_environment(state)
-            return state, reward, done, info #make it end game, with -1
+                self.update_environment(next_state)
+            return next_state, reward, done, info #make it end game, with -1
 
 
 
@@ -129,10 +129,10 @@ class DubinsCarEnv(gym.Env):
             done = False
             info = {}
             if update_env:
-                self.update_environment(state)
+                self.update_environment(next_state)
 
 
-            return state, reward, done, info #make it end game, with -1
+            return next_state, reward, done, info #make it end game, with -1
 
 
 
@@ -157,6 +157,16 @@ class DubinsCarEnv(gym.Env):
         max_reward = np.max(rewards)
 
         return max_reward 
+    
+    def get_reward2(self, state):
+
+        rewards = []
+        for a in range(self.action_space.n):
+            _, reward_, done, _ = self.step(state, a)
+            rewards.append(reward_)
+        max_reward = np.mean(rewards)
+
+        return max_reward 
 
 
 
@@ -169,10 +179,10 @@ class DubinsCarEnv(gym.Env):
                 #print(state)
                 state_, reward, done, _ = self.step(state, action, update_env=False)
                 state_ = self.encode_helper(state_)
-                # if done:
-                #     value = reward
-                # else:
-                value = reward + gamma*forward(X=state_, params=params)
+                if done:
+                    value = np.array([reward])
+                else:
+                    value = reward + gamma*forward(X=state_, params=params)
 
                 values.append(value)
             max_value = np.max(values)
