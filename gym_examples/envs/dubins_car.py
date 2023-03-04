@@ -7,7 +7,7 @@ class DubinsCarEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
     def __init__(self):
-        self.action_space = spaces.Discrete(3)
+        self.action_space = spaces.Discrete(5)
         self.observation_space = spaces.Box(low=np.array([-4, -4, 0]), high=np.array([4, 4, 2*np.pi]), dtype=np.float64)        
         self.goal_position = np.array([0,0]) # position of the goal
         self.obstacle_position = np.array([-2,0]) # position of the obstacle
@@ -45,8 +45,10 @@ class DubinsCarEnv(gym.Env):
             omega = omega
         elif action == 1: # action 1 : straight
             omega = 0
-        else: # action 3: reverse
-            omega = -np.pi
+        elif action ==3: # action 3: reverse left
+            omega = -omega - np.pi
+        elif action ==4: # action 4: reverse right
+            omega = omega - np.pi
 
 
             
@@ -66,6 +68,7 @@ class DubinsCarEnv(gym.Env):
         next_state[2] += omega * self.timestep
         next_state[2] = (next_state[2]) % (2 * np.pi) 
 
+        
 
         next_state[0] += v * np.cos(next_state[2]) * self.timestep
         next_state[1] += v * np.sin(next_state[2]) * self.timestep
@@ -81,9 +84,9 @@ class DubinsCarEnv(gym.Env):
         if next_state[0] < self.observation_space.low[0] or next_state[0] > self.observation_space.high[0] or next_state[1] < self.observation_space.low[1] or next_state[1] > self.observation_space.high[1]:
             done = False
             reward = 0
-            info = {}
-            state[2] = ((next_state[2] - np.pi)) % (2 * np.pi) #np.random.uniform(low=-np.pi, high=np.pi)
-            next_state = state #revert to previous state, but flip back
+            info = {'is_legal':False}
+            #state[2] = ((next_state[2] - np.pi)) % (2 * np.pi) #np.random.uniform(low=-np.pi, high=np.pi)
+            state = next_state #revert to previous state, but flip back
 
 
 
@@ -98,9 +101,9 @@ class DubinsCarEnv(gym.Env):
         dist_obstacle = np.linalg.norm(next_state[:2] - self.obstacle_position) - self.obstacle_radius
         if dist_obstacle < 0:
             done = False
-            reward = 0 
-            info = {}
-            state[2] = ((next_state[2] - np.pi)) % (2 * np.pi)#np.random.uniform(low=-np.pi, high=np.pi)
+            reward = -1
+            info = {'is_legal':False}
+            #state[2] = ((next_state[2] - np.pi)) % (2 * np.pi)#np.random.uniform(low=-np.pi, high=np.pi)
             next_state = state
 
             if update_env:
@@ -116,7 +119,7 @@ class DubinsCarEnv(gym.Env):
 
             done = True
             reward = self.reward 
-            info ={}
+            info ={'is_legal':True}
             if update_env:
                 self.update_environment(next_state)
             return next_state, reward, done, info #make it end game, with -1
@@ -127,7 +130,7 @@ class DubinsCarEnv(gym.Env):
             state = next_state
             reward = 0
             done = False
-            info = {}
+            info = {'is_legal':True}
             if update_env:
                 self.update_environment(next_state)
 
@@ -151,10 +154,16 @@ class DubinsCarEnv(gym.Env):
     def get_reward(self, state):
 
         rewards = []
+        legal = []
         for a in range(self.action_space.n):
-            _, reward_, done, _ = self.step(state, a)
+            _, reward_, done, info = self.step(state, a)
             rewards.append(reward_)
-        max_reward = np.max(rewards)
+            legal.append(info['is_legal'])
+
+        if np.sum(legal) == 0:
+            max_reward = -1
+        else:
+            max_reward = np.max(rewards)
 
         return max_reward 
     
@@ -176,16 +185,21 @@ class DubinsCarEnv(gym.Env):
             state = self.decode_helper(state)
             values = []
             for action in range(self.action_space.n):
-                #print(state)
-                state_, reward, done, _ = self.step(state, action, update_env=False)
+                state_, reward, done, info = self.step(state, action, update_env=False)
                 state_ = self.encode_helper(state_)
                 if done:
                     value = np.array([reward])
+                    values.append(value)
+                elif info['is_legal'] == False:
+                    pass
                 else:
                     value = reward + gamma*forward(X=state_, params=params)
+                    values.append(value)
 
-                values.append(value)
-            max_value = np.max(values)
+            if len(values) == 0:
+                max_value = -1.
+            else:
+                max_value = np.max(values)
             y_hat.append(max_value)
 
         return np.array(y_hat)
