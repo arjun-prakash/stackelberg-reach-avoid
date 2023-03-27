@@ -16,8 +16,8 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
 
         self.players = ['defender', 'attacker']
-
-        self.action_space = {'attacker':spaces.Discrete(3), 'defender':spaces.Discrete(3)}
+        self.num_actions = 3
+        self.action_space = {'attacker':spaces.Discrete(self.num_actions), 'defender':spaces.Discrete(self.num_actions)}
 
         self.size = 4
         self.reward = 1
@@ -39,7 +39,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         self.timestep = 1 # timestep in seconds
         self.v_max = 0.25 # maximum speed
-        self.omega_max = 90 * np.pi/180  # maximum angular velocity (radians)
+        self.omega_max = 65 * np.pi/180  # maximum angular velocity (radians)
         self.images = []
         
 
@@ -77,11 +77,15 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         v = self.v_max # speed of the car
         omega = self.omega_max # angular velocity of the car
         if action == 0: # turn left
-            omega = - omega
+            omega = -omega
         elif action == 2: # turn right
             omega = omega
-        else: # action 1 : straight
+        
+        elif action == 1: # action 1 : straight
             omega = 0
+        else:
+            #reverse
+            omega = -np.pi
 
         
 
@@ -109,18 +113,18 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         #     return self.car_position, -10, True, {}
 
         # check if the car is out of bounds
-        if self.state['attacker'][0] < self.observation_space['attacker'].low[0] or self.state['attacker'][0] > self.observation_space['attacker'].high[0] or self.state['attacker'][1] < self.observation_space['attacker'].low[1] or self.state['attacker'][1] > self.observation_space[player].high[1]:
+        if next_state['attacker'][0] < self.observation_space['attacker'].low[0] or next_state['attacker'][0] > self.observation_space['attacker'].high[0] or next_state['attacker'][1] < self.observation_space['attacker'].low[1] or next_state['attacker'][1] > self.observation_space[player].high[1]:
             #print('out of bounds')
             reward = -self.reward
             done = False
-            info = {'player': player,'is_legal':False}
+            info = {'player': player,'is_legal':False, 'status':'out_of_bounds'}
 
             next_state = state.copy()
 
-            if update_env:
-                self.state = next_state
+            # if update_env:
+            #     self.state = state
 
-            return next_state, -reward, done, info
+            return state, -reward, done, info
         
 
         dist_capture = np.linalg.norm(next_state['attacker'][:2] - next_state['defender'][:2]) - self.capture_radius
@@ -137,7 +141,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                 next_state = state.copy()
 
             else: #defender eats attacker
-                info = {'player': player, 'is_legal':True}
+                info = {'player': player, 'is_legal':True, 'status':'eaten'}
                 done = True
 
 
@@ -150,7 +154,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         if dist_goal < self.min_distance_to_goal:
             reward = self.reward
             done = True
-            info = {'player': player, 'is_legal':True}
+            info = {'player': player, 'is_legal':True, 'status':'goal_reached'}
 
             if update_env:
                 self.state = next_state
@@ -160,7 +164,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         else:
             reward = 0
             done = False
-            info = {'player': player, 'is_legal':True}
+            info = {'player': player, 'is_legal':True, 'status':'in_progress'}
             if update_env:
                 self.state = next_state
 
@@ -220,12 +224,16 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
                     
 
-            pa = np.array(possible_actions)[:,2].reshape(3,3)
-            #reward =  np.min(np.max(pa.T,axis=0))
-            best_attacker_moves = np.argmax(pa.T,axis=0)
-            best_defender_move =  np.argmin(np.max(pa.T,axis=0))
-            best_attacker_move = best_attacker_moves[best_defender_move]
-            best_value = pa[best_defender_move][best_attacker_move]
+            pa = np.array(possible_actions)[:,2].reshape(self.num_actions,self.num_actions)
+            if np.all(pa == 0):
+                best_value = 0 #defender wins
+
+            else:
+            #   reward =  np.min(np.max(pa.T,axis=0))
+                best_attacker_moves = np.argmax(pa.T,axis=0)
+                best_defender_move =  np.argmin(np.max(pa.T,axis=0))
+                best_attacker_move = best_attacker_moves[best_defender_move]
+                best_value = pa[best_defender_move][best_attacker_move]
 
 
             y_hat.append(best_value)
