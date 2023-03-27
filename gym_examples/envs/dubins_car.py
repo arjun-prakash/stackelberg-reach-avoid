@@ -7,7 +7,7 @@ class DubinsCarEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
     def __init__(self):
-        self.action_space = spaces.Discrete(5)
+        self.action_space = spaces.Discrete(3)
         self.observation_space = spaces.Box(low=np.array([-4, -4, 0]), high=np.array([4, 4, 2*np.pi]), dtype=np.float64)        
         self.goal_position = np.array([0,0]) # position of the goal
         self.obstacle_position = np.array([-2,0]) # position of the obstacle
@@ -16,7 +16,7 @@ class DubinsCarEnv(gym.Env):
         self.min_distance_to_goal = 1 # minimum distance to goal to consider the task as done
         self.timestep = 1 # timestep in seconds
         self.v_max = 0.25 # maximum speed
-        self.omega_max = 65 * np.pi/180  # maximum angular velocity (radians)
+        self.omega_max = 90 * np.pi/180  # maximum angular velocity (radians)
         self.images = []
         self.reward = 1
         #self.reset()
