@@ -38,8 +38,8 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         self.min_distance_to_obstacle = 0.1 # minimum distance to obstacle to consider the task as done
 
         self.timestep = 1 # timestep in seconds
-        self.v_max = 0.25/2 # maximum speed
-        self.omega_max = 65 * np.pi/180  # maximum angular velocity (radians)
+        self.v_max = 0.25 # maximum speed
+        self.omega_max = 90 * np.pi/180  # maximum angular velocity (radians)
         self.images = []
         
 
@@ -110,10 +110,12 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         # check if the car is out of bounds
         if self.state['attacker'][0] < self.observation_space['attacker'].low[0] or self.state['attacker'][0] > self.observation_space['attacker'].high[0] or self.state['attacker'][1] < self.observation_space['attacker'].low[1] or self.state['attacker'][1] > self.observation_space[player].high[1]:
-            print('out of bounds')
+            #print('out of bounds')
             reward = -self.reward
-            done = True
-            info = {'attacker': 'lost', 'defender':'won'}
+            done = False
+            info = {'player': player,'is_legal':False}
+
+            next_state = state.copy()
 
             if update_env:
                 self.state = next_state
@@ -126,19 +128,29 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         
         if dist_capture < 0:
             reward = -self.reward
-            done = True
-            info = {'attacker': 'lost', 'defender':'won'}
+            done = False
+
+
+            if player == 'attacker':
+                info = {'player': player, 'is_legal':False}
+                done = False
+                next_state = state.copy()
+
+            else: #defender eats attacker
+                info = {'player': player, 'is_legal':True}
+                done = True
+
 
             if update_env:
                 self.state = next_state
 
-            return next_state, -reward, done, info
+            return next_state, reward, done, info
        
         dist_goal = np.linalg.norm(next_state['attacker'][:2] - self.goal_position)
         if dist_goal < self.min_distance_to_goal:
             reward = self.reward
             done = True
-            info = {'attacker': 'won', 'defender':'lost'}
+            info = {'player': player, 'is_legal':True}
 
             if update_env:
                 self.state = next_state
@@ -148,7 +160,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         else:
             reward = 0
             done = False
-            info = {}
+            info = {'player': player, 'is_legal':True}
             if update_env:
                 self.state = next_state
 
@@ -197,10 +209,16 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             for d_action in range(self.action_space['defender'].n):
                 env_state_ , reward, done, info = self.step(env_state, d_action, 'defender')
                 for a_action in range(self.action_space['attacker'].n):
-                    next_env_state, reward, _, _ = self.step(env_state_, a_action, 'attacker')
-                    next_nn_state = self.state_for_nn(next_env_state)
-                    value = reward + gamma*forward(X=next_nn_state, params=params)
-                    possible_actions.append([d_action, a_action, value[0]])
+                    next_env_state, reward, _, attacker_info = self.step(env_state_, a_action, 'attacker')
+
+                    if attacker_info['is_legal'] == False:
+                        possible_actions.append([d_action, a_action, 0])
+                    else:
+                        next_nn_state = self.state_for_nn(next_env_state)
+                        value = reward + gamma*forward(X=next_nn_state, params=params)
+                        possible_actions.append([d_action, a_action, value[0]])
+
+                    
 
             pa = np.array(possible_actions)[:,2].reshape(3,3)
             #reward =  np.min(np.max(pa.T,axis=0))
