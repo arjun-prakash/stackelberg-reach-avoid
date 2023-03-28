@@ -29,7 +29,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         self.state = {'attacker': np.array([0,0,0]), 'defender':np.array([0,0,0])}
 
-        self.goal_position = np.array([0,0]) # position of the goal
+        self.goal_position = np.array([3,0]) # position of the goal
         self.capture_radius = 0.5 # radius of the obstacle
 
 
@@ -52,7 +52,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         #self.car_position['defender'] = np.array([2,2,2])
 
 
-        self.goal_position = np.array([0,0]) 
+        self.goal_position = self.goal_position
         return self.state
     
     def set(self, ax, ay, atheta, dx, dy, dtheta):
@@ -131,18 +131,18 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
       
         
         if dist_capture < 0:
-            reward = -self.reward
-            done = False
 
 
             if player == 'attacker':
                 info = {'player': player, 'is_legal':False}
                 done = False
                 next_state = state.copy()
+                reward = 0
 
             else: #defender eats attacker
                 info = {'player': player, 'is_legal':True, 'status':'eaten'}
                 done = True
+                reward = -self.reward
 
 
             if update_env:
@@ -223,10 +223,10 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                         possible_actions.append([d_action, a_action, value[0]])
 
                     
-
+            print(possible_actions)
             pa = np.array(possible_actions)[:,2].reshape(self.num_actions,self.num_actions)
             if np.all(pa == 0):
-                best_value = 0 #defender wins
+                best_value = -1 #defender wins
 
             else:
             #   reward =  np.min(np.max(pa.T,axis=0))
