@@ -5,6 +5,8 @@ from gym import spaces
 import numpy as np
 import jax
 import copy
+import jax.numpy as jnp
+
 
 from envs.dubins_car import DubinsCarEnv
 
@@ -39,7 +41,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         self.timestep = 1 # timestep in seconds
         self.v_max = 0.25 # maximum speed
-        self.omega_max = 65 * np.pi/180  # maximum angular velocity (radians)
+        self.omega_max = 90 * np.pi/180  # maximum angular velocity (radians)
         self.images = []
         
 
@@ -115,7 +117,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         # check if the car is out of bounds
         if next_state['attacker'][0] < self.observation_space['attacker'].low[0] or next_state['attacker'][0] > self.observation_space['attacker'].high[0] or next_state['attacker'][1] < self.observation_space['attacker'].low[1] or next_state['attacker'][1] > self.observation_space[player].high[1]:
             #print('out of bounds')
-            reward = -self.reward
+            reward = 0
             done = False
             info = {'player': player,'is_legal':False, 'status':'out_of_bounds'}
 
@@ -124,7 +126,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             # if update_env:
             #     self.state = state
 
-            return state, -reward, done, info
+            return state, reward, done, info
         
 
         dist_capture = np.linalg.norm(next_state['attacker'][:2] - next_state['defender'][:2]) - self.capture_radius
@@ -216,16 +218,15 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                     next_env_state, reward, _, attacker_info = self.step(env_state_, a_action, 'attacker')
 
                     if attacker_info['is_legal'] == False:
-                        possible_actions.append([d_action, a_action, 0])
+                        possible_actions.append([d_action, a_action, -1])
                     else:
                         next_nn_state = self.state_for_nn(next_env_state)
                         value = reward + gamma*forward(X=next_nn_state, params=params)
                         possible_actions.append([d_action, a_action, value[0]])
 
                     
-            print(possible_actions)
             pa = np.array(possible_actions)[:,2].reshape(self.num_actions,self.num_actions)
-            if np.all(pa == 0):
+            if np.all(pa == -1):
                 best_value = -1 #defender wins
 
             else:
@@ -287,3 +288,15 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         import imageio
 
         imageio.mimsave('two_player_animation.gif', self.images, fps=30)
+
+
+
+    def get_attacker_max_reward(self, state):
+        max_reward = -np.inf
+        for d_action in range(self.action_space['defender'].n):
+            state_, _, _, info_d = self.step(state, d_action, 'defender')
+            for a_action in range(self.action_space['attacker'].n):
+                _, reward, _, info_a = self.step(state_, a_action, 'attacker')
+                if info_a['is_legal']:
+                    max_reward = max(max_reward, reward)
+        return max_reward
