@@ -41,7 +41,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         self.timestep = 1 # timestep in seconds
         self.v_max = 0.25 # maximum speed
-        self.omega_max = 90 * np.pi/180  # maximum angular velocity (radians)
+        self.omega_max = 65 * np.pi/180  # maximum angular velocity (radians)
         self.images = []
         
 
@@ -224,9 +224,9 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                     next_env_state, attacker_reward, attacker_done, attacker_info = self.step(env_state_, a_action, 'attacker')
 
                     if attacker_info['is_legal'] == False:
-                        possible_actions.append([d_action, a_action, attacker_reward])
+                        possible_actions.append([d_action, a_action, attacker_reward]) #reward -1 if eaten, 0 if ou
                     elif attacker_done:
-                        possible_actions.append([d_action, a_action, attacker_reward])
+                        possible_actions.append([d_action, a_action, attacker_reward]) #reward 1
                     else:
                         next_nn_state = self.state_for_nn(next_env_state)
                         value = reward + gamma*forward(X=next_nn_state, params=params)
@@ -308,3 +308,39 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                 if info_a['is_legal']:
                     max_reward = max(max_reward, reward)
         return max_reward
+
+
+    def norm_state_for_env(self, nn_state):
+        min_value = -4
+        max_value = 4
+
+        env_state = {
+            'attacker': np.array([
+                nn_state[0] * (max_value - min_value) + min_value,
+                nn_state[1] * (max_value - min_value) + min_value,
+                np.arctan2(nn_state[3], nn_state[2])
+            ]),
+            'defender': np.array([
+                nn_state[4] * (max_value - min_value) + min_value,
+                nn_state[5] * (max_value - min_value) + min_value,
+                np.arctan2(nn_state[7], nn_state[6])
+            ])
+        }
+        return env_state
+
+
+    def state_for_nn(self, env_state):
+        min_value = -4
+        max_value = 4
+
+        nn_state = np.array([
+            (env_state['attacker'][0] - min_value) / (max_value - min_value),
+            (env_state['attacker'][1] - min_value) / (max_value - min_value),
+            np.cos(env_state['attacker'][2]),
+            np.sin(env_state['attacker'][2]),
+            (env_state['defender'][0] - min_value) / (max_value - min_value),
+            (env_state['defender'][1] - min_value) / (max_value - min_value),
+            np.cos(env_state['defender'][2]),
+            np.sin(env_state['defender'][2])
+        ])
+        return nn_state
