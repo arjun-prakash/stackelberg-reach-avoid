@@ -121,7 +121,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         # check if the car is out of bounds
         if next_state['attacker'][0] < self.observation_space['attacker'].low[0] or next_state['attacker'][0] > self.observation_space['attacker'].high[0] or next_state['attacker'][1] < self.observation_space['attacker'].low[1] or next_state['attacker'][1] > self.observation_space[player].high[1]:
             #print('out of bounds')
-            reward = 0
+            reward = -self.reward #or 0
             done = False
             info = {'player': player,'is_legal':False, 'status':'out_of_bounds'}
 
