@@ -16,7 +16,7 @@ class DubinsCarEnv(gym.Env):
         self.min_distance_to_goal = 1 # minimum distance to goal to consider the task as done
         self.timestep = 1 # timestep in seconds
         self.v_max = 0.25 # maximum speed
-        self.omega_max = 90 * np.pi/180  # maximum angular velocity (radians)
+        self.omega_max = 65 * np.pi/180  # maximum angular velocity (radians)
         self.images = []
         self.reward = 1
         #self.reset()
@@ -76,23 +76,24 @@ class DubinsCarEnv(gym.Env):
         # print('state', state)
         # print('next_state', next_state)
         
-            
+        dist_goal = np.linalg.norm(next_state[:2] - self.goal_position) - self.min_distance_to_goal
+
 
             # update car position and orientation
 
         # check if the car is out of bounds
         if next_state[0] < self.observation_space.low[0] or next_state[0] > self.observation_space.high[0] or next_state[1] < self.observation_space.low[1] or next_state[1] > self.observation_space.high[1]:
             done = False
-            reward = 0
+            reward = -dist_goal
             info = {'is_legal':False}
-            #state[2] = ((next_state[2] - np.pi)) % (2 * np.pi) #np.random.uniform(low=-np.pi, high=np.pi)
-            state = next_state #revert to previous state, but flip back
+            state[2] = ((next_state[2] - np.pi)) % (2 * np.pi) #np.random.uniform(low=-np.pi, high=np.pi)
+            #state = next_state #revert to previous state, but flip back
 
 
 
             if update_env:
-                self.update_environment(next_state)
-            return next_state, reward, done, info #make it end game, with -1
+                self.update_environment(state)
+            return state, reward, done, info #make it end game, with -1
 
 
 
@@ -101,7 +102,7 @@ class DubinsCarEnv(gym.Env):
         dist_obstacle = np.linalg.norm(next_state[:2] - self.obstacle_position) - self.obstacle_radius
         if dist_obstacle < 0:
             done = False
-            reward = -1
+            reward = -10
             info = {'is_legal':False}
             #state[2] = ((next_state[2] - np.pi)) % (2 * np.pi)#np.random.uniform(low=-np.pi, high=np.pi)
             next_state = state
@@ -113,7 +114,6 @@ class DubinsCarEnv(gym.Env):
 
 
             
-        dist_goal = np.linalg.norm(next_state[:2] - self.goal_position) - self.min_distance_to_goal
         if dist_goal <= 0:
             state = next_state
 
@@ -128,7 +128,7 @@ class DubinsCarEnv(gym.Env):
 
         else:
             state = next_state
-            reward = 0
+            reward = -dist_goal
             done = False
             info = {'is_legal':True}
             if update_env:
@@ -299,7 +299,7 @@ class DubinsCarEnv(gym.Env):
     def make_gif(self):
         import imageio
 
-        imageio.mimsave('animation.gif', self.images, fps=30)
+        imageio.mimsave('animation_pg.gif', self.images, fps=30)
 
 
 
