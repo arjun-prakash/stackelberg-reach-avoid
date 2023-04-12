@@ -84,7 +84,7 @@ class DubinsCarEnv(gym.Env):
         # check if the car is out of bounds
         if next_state[0] < self.observation_space.low[0] or next_state[0] > self.observation_space.high[0] or next_state[1] < self.observation_space.low[1] or next_state[1] > self.observation_space.high[1]:
             done = False
-            reward = -dist_goal
+            reward = -1
             info = {'is_legal':False}
             state[2] = ((next_state[2] - np.pi)) % (2 * np.pi) #np.random.uniform(low=-np.pi, high=np.pi)
             #state = next_state #revert to previous state, but flip back
@@ -102,7 +102,7 @@ class DubinsCarEnv(gym.Env):
         dist_obstacle = np.linalg.norm(next_state[:2] - self.obstacle_position) - self.obstacle_radius
         if dist_obstacle < 0:
             done = False
-            reward = -10
+            reward = -1
             info = {'is_legal':False}
             #state[2] = ((next_state[2] - np.pi)) % (2 * np.pi)#np.random.uniform(low=-np.pi, high=np.pi)
             next_state = state
@@ -118,7 +118,7 @@ class DubinsCarEnv(gym.Env):
             state = next_state
 
             done = True
-            reward = self.reward 
+            reward = 1
             info ={'is_legal':True}
             if update_env:
                 self.update_environment(next_state)
@@ -128,7 +128,7 @@ class DubinsCarEnv(gym.Env):
 
         else:
             state = next_state
-            reward = -dist_goal
+            reward = 0
             done = False
             info = {'is_legal':True}
             if update_env:
