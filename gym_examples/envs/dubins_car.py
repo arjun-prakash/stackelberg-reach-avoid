@@ -7,7 +7,7 @@ class DubinsCarEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
     def __init__(self):
-        self.action_space = spaces.Discrete(5)
+        self.action_space = spaces.Discrete(3)
         self.observation_space = spaces.Box(low=np.array([-4, -4, 0]), high=np.array([4, 4, 2*np.pi]), dtype=np.float64)        
         self.goal_position = np.array([0,0]) # position of the goal
         self.obstacle_position = np.array([-2,0]) # position of the obstacle
@@ -77,7 +77,7 @@ class DubinsCarEnv(gym.Env):
         # print('next_state', next_state)
         
         dist_goal = np.linalg.norm(next_state[:2] - self.goal_position) - self.min_distance_to_goal
-        dreward = -dist_goal/4
+        dreward = np.exp(-dist_goal)
 
 
             # update car position and orientation
@@ -212,11 +212,39 @@ class DubinsCarEnv(gym.Env):
         theta = np.mod(theta, 2*np.pi)
         return np.array([x,y,theta])
     
-    def encode_helper(self, state):
+    def encode_helper(self, state, norm=True):
         x = state[0]
         y = state[1]
         theta = state[2]
-        return np.array([x,y,np.cos(theta),np.sin(theta)])
+
+
+        if norm:
+            x_norm = (x - self.observation_space.low[0]) / (self.observation_space.high[0] - self.observation_space.low[0])
+            y_norm = (y - self.observation_space.low[1]) / (self.observation_space.high[1] - self.observation_space.low[1])
+
+            # Normalize the coordinates and goal coordinates
+            goal_x_norm = (self.goal_position[0] - self.observation_space.low[0]) / (self.observation_space.high[0] - self.observation_space.low[0])
+            goal_y_norm = (self.goal_position[1] - self.observation_space.low[1]) / (self.observation_space.high[1] - self.observation_space.low[1])
+
+            # Compute the normalized distance to the goal
+            distance_to_goal = np.linalg.norm(np.array([goal_x_norm, goal_y_norm]) - np.array([x_norm, y_norm]))
+
+            # Compute the direction to the goal
+            direction_to_goal = np.arctan2(goal_y_norm - y_norm, goal_x_norm - x_norm)
+
+            # Compute the angle between the agent's orientation and the direction to the goal
+            angle_diff = direction_to_goal - theta
+
+            # Normalize the angle difference to the range [-pi, pi]
+            angle_diff = (angle_diff + np.pi) % (2 * np.pi) - np.pi
+
+            # Compute the cosine of the angle difference
+            facing_goal = np.cos(angle_diff)
+
+            return np.array([x_norm, y_norm, np.cos(theta), np.sin(theta), distance_to_goal, facing_goal])
+
+        else:
+            return np.array([x,y,np.cos(theta),np.sin(theta)])
         
 
 
@@ -228,9 +256,18 @@ class DubinsCarEnv(gym.Env):
         """
         Reset the environment and return the initial state
         """
-        self.state = self.observation_space.sample()
+        illegal = True
         self.goal_position = self.goal_position
         self.obstacle_position = self.obstacle_position
+
+        while illegal:
+            self.state = self.observation_space.sample()
+            dist_obstacle = np.linalg.norm(self.state[:2] - self.obstacle_position) - self.obstacle_radius
+            dist_goal = np.linalg.norm(self.state[:2] - self.goal_position) - self.min_distance_to_goal
+
+            if dist_obstacle > 0 and dist_goal > 0:
+                illegal = False
+
         return self.state
 
     def set(self, x, y,theta):
@@ -241,6 +278,8 @@ class DubinsCarEnv(gym.Env):
 
         self.goal_position = self.goal_position
         self.obstacle_position = self.obstacle_position
+
+ 
         return self.state
         
     def render(self, mode='human', close=False):
