@@ -7,7 +7,7 @@ class DubinsCarEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
     def __init__(self):
-        self.action_space = spaces.Discrete(3)
+        self.action_space = spaces.Discrete(5)
         self.observation_space = spaces.Box(low=np.array([-4, -4, 0]), high=np.array([4, 4, 2*np.pi]), dtype=np.float64)        
         self.goal_position = np.array([0,0]) # position of the goal
         self.obstacle_position = np.array([-2,0]) # position of the obstacle
@@ -77,6 +77,7 @@ class DubinsCarEnv(gym.Env):
         # print('next_state', next_state)
         
         dist_goal = np.linalg.norm(next_state[:2] - self.goal_position) - self.min_distance_to_goal
+        dreward = -dist_goal/4
 
 
             # update car position and orientation
@@ -84,7 +85,7 @@ class DubinsCarEnv(gym.Env):
         # check if the car is out of bounds
         if next_state[0] < self.observation_space.low[0] or next_state[0] > self.observation_space.high[0] or next_state[1] < self.observation_space.low[1] or next_state[1] > self.observation_space.high[1]:
             done = False
-            reward = -1
+            reward = dreward
             info = {'is_legal':False}
             state[2] = ((next_state[2] - np.pi)) % (2 * np.pi) #np.random.uniform(low=-np.pi, high=np.pi)
             #state = next_state #revert to previous state, but flip back
@@ -102,7 +103,7 @@ class DubinsCarEnv(gym.Env):
         dist_obstacle = np.linalg.norm(next_state[:2] - self.obstacle_position) - self.obstacle_radius
         if dist_obstacle < 0:
             done = False
-            reward = -1
+            reward = dreward
             info = {'is_legal':False}
             #state[2] = ((next_state[2] - np.pi)) % (2 * np.pi)#np.random.uniform(low=-np.pi, high=np.pi)
             next_state = state
@@ -128,7 +129,7 @@ class DubinsCarEnv(gym.Env):
 
         else:
             state = next_state
-            reward = 0
+            reward = dreward
             done = False
             info = {'is_legal':True}
             if update_env:

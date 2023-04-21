@@ -146,12 +146,12 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                 info = {'player': player, 'is_legal':False, 'status':'cannot move into defender'}
                 done = False
                 next_state = state.copy()
-                reward = -self.reward
+                reward = 0
 
             else: #defender eats attacker
                 info = {'player': player, 'is_legal':True, 'status':'eaten'}
                 done = True
-                reward = -self.reward
+                reward = 0
 
 
             if update_env:
@@ -210,6 +210,29 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         nn_state = np.array([env_state['attacker'][0], env_state['attacker'][1], np.cos(env_state['attacker'][2]), np.sin(env_state['attacker'][2]), env_state['defender'][0], env_state['defender'][1], np.cos(env_state['defender'][2]), np.sin(env_state['defender'][2])])
         return nn_state
     
+    import numpy as np
+
+    def state_for_nn2(self,env_state):
+        attacker = env_state['attacker']
+        defender = env_state['defender']
+
+        # Calculate distance
+        distance = np.sqrt((defender[0] - attacker[0])**2 + (defender[1] - attacker[1])**2)
+
+        # Calculate relative angle
+        attacker_angle = env_state['attacker'][2]
+        defender_angle = env_state['defender'][2]
+        relative_angle = np.arctan2(np.sin(defender_angle - attacker_angle), np.cos(defender_angle - attacker_angle))
+
+        # Encode the state for the neural network
+        nn_state = np.array([
+            attacker[0], attacker[1], np.cos(attacker[2]), np.sin(attacker[2]),
+            defender[0], defender[1], np.cos(defender[2]), np.sin(defender[2]),
+            distance, relative_angle
+        ])
+        return nn_state
+
+    
 
 
 
@@ -228,14 +251,14 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                     elif attacker_done:
                         possible_actions.append([d_action, a_action, attacker_reward]) #reward 1
                     else:
-                        next_nn_state = self.state_for_nn(next_env_state)
+                        next_nn_state = self.state_for_nn2(next_env_state)
                         value = reward + gamma*forward(X=next_nn_state, params=params)
                         possible_actions.append([d_action, a_action, value[0]])
 
-                    
+                  
             pa = np.array(possible_actions)[:,2].reshape(self.num_actions,self.num_actions)
-            if np.all(pa == -1):
-                best_value = -1 #defender wins
+            if np.all(pa == 0):
+                best_value = 0 #defender wins
 
             else:
             #   reward =  np.min(np.max(pa.T,axis=0))
