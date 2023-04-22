@@ -216,7 +216,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
     def sample_value_iter(self,X_batch, forward, params, gamma):
         y_hat = []
         for state in X_batch:
-            env_state = self.state_for_env(state)
+            env_state = self.decode_state_big(state)
             possible_actions = []
             for d_action in range(self.action_space['defender'].n):
                 env_state_ , reward, done, info = self.step(env_state, d_action, 'defender')
@@ -228,7 +228,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                     elif attacker_done:
                         possible_actions.append([d_action, a_action, attacker_reward]) #reward 1
                     else:
-                        next_nn_state = self.state_for_nn(next_env_state)
+                        next_nn_state = self.encode_state_big(next_env_state)
                         value = reward + gamma*forward(X=next_nn_state, params=params)
                         possible_actions.append([d_action, a_action, value[0]])
 
@@ -329,7 +329,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         return env_state
 
 
-    def state_for_nn(self, env_state):
+    def norm_state_for_nn(self, env_state):
         min_value = -4
         max_value = 4
 
@@ -344,3 +344,87 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             np.sin(env_state['defender'][2])
         ])
         return nn_state
+    
+    
+    
+    def encode_state_big(self, env_state):
+        min_value = -self.size
+        max_value = self.size
+
+        def normalize_coordinate(coordinate, min_value, max_value):
+            return (coordinate - min_value) / (max_value - min_value)
+
+        goal_position = self.goal_position
+        attacker_state = env_state['attacker']
+        defender_state = env_state['defender']
+
+        attacker_x_norm = normalize_coordinate(attacker_state[0], min_value, max_value)
+        attacker_y_norm = normalize_coordinate(attacker_state[1], min_value, max_value)
+        attacker_theta = attacker_state[2]
+
+        defender_x_norm = normalize_coordinate(defender_state[0], min_value, max_value)
+        defender_y_norm = normalize_coordinate(defender_state[1], min_value, max_value)
+        defender_theta = defender_state[2]
+
+        goal_x_norm = normalize_coordinate(goal_position[0], min_value, max_value)
+        goal_y_norm = normalize_coordinate(goal_position[1], min_value, max_value)
+
+        distance_attacker_goal = np.linalg.norm(np.array([goal_x_norm, goal_y_norm]) - np.array([attacker_x_norm, attacker_y_norm]))
+        direction_attacker_goal = np.arctan2(goal_y_norm - attacker_y_norm, goal_x_norm - attacker_x_norm)
+
+        angle_diff_attacker_goal = direction_attacker_goal - attacker_theta
+        angle_diff_attacker_goal = (angle_diff_attacker_goal + np.pi) % (2 * np.pi) - np.pi
+        facing_goal_attacker = np.cos(angle_diff_attacker_goal)
+
+        distance_attacker_defender = np.linalg.norm(np.array([defender_x_norm, defender_y_norm]) - np.array([attacker_x_norm, attacker_y_norm]))
+        direction_attacker_defender = np.arctan2(defender_y_norm - attacker_y_norm, defender_x_norm - attacker_x_norm)
+
+        angle_diff_attacker_defender = direction_attacker_defender - attacker_theta
+        angle_diff_attacker_defender = (angle_diff_attacker_defender + np.pi) % (2 * np.pi) - np.pi
+        facing_defender_attacker = np.cos(angle_diff_attacker_defender)
+
+        angle_diff_defender_attacker = direction_attacker_defender - defender_theta + np.pi
+        angle_diff_defender_attacker = (angle_diff_defender_attacker + np.pi) % (2 * np.pi) - np.pi
+        facing_attacker_defender = np.cos(angle_diff_defender_attacker)
+
+        nn_state = np.array([attacker_x_norm, 
+                             attacker_y_norm, 
+                             np.cos(attacker_theta), 
+                             np.sin(attacker_theta), 
+                             defender_x_norm, 
+                             defender_y_norm, 
+                             np.cos(defender_theta), 
+                             np.sin(defender_theta), 
+                             distance_attacker_goal, 
+                             facing_goal_attacker, 
+                             distance_attacker_defender, 
+                             facing_defender_attacker,
+                             facing_attacker_defender
+                            ])
+        
+
+        
+        return nn_state
+
+    
+    def decode_state_big(self, nn_state):
+        min_value = -self.size
+        max_value = self.size
+
+        def unnormalize_coordinate(coordinate, min_value, max_value):
+            return coordinate * (max_value - min_value) + min_value
+
+        attacker_x = unnormalize_coordinate(nn_state[0], min_value, max_value)
+        attacker_y = unnormalize_coordinate(nn_state[1], min_value, max_value)
+        attacker_theta = np.arctan2(nn_state[3], nn_state[2])
+
+        defender_x = unnormalize_coordinate(nn_state[4], min_value, max_value)
+        defender_y = unnormalize_coordinate(nn_state[5], min_value, max_value)
+        defender_theta = np.arctan2(nn_state[7], nn_state[6])
+
+        env_state = {
+            'attacker': np.array([attacker_x, attacker_y, attacker_theta]),
+            'defender': np.array([defender_x, defender_y, defender_theta])
+        }
+        return env_state
+    
