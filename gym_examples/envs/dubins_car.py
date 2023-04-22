@@ -7,7 +7,7 @@ class DubinsCarEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
     def __init__(self):
-        self.action_space = spaces.Discrete(3)
+        self.action_space = spaces.Discrete(5)
         self.observation_space = spaces.Box(low=np.array([-4, -4, 0]), high=np.array([4, 4, 2*np.pi]), dtype=np.float64)        
         self.goal_position = np.array([0,0]) # position of the goal
         self.obstacle_position = np.array([-2,0]) # position of the obstacle
