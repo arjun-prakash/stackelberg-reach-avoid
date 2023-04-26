@@ -50,7 +50,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         Reset the environment and return the initial state
         """
         self.state['attacker'] = self.observation_space['attacker'].sample()
-        self.state['defender'] = np.array([0, 0, np.pi], dtype=self.observation_space['defender'].dtype)
+        self.state['defender'] = np.array([0, 0., 0.], dtype=self.observation_space['defender'].dtype)
         #self.car_position['defender'] = np.array([2,2,2])
 
 
@@ -107,7 +107,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         next_state[player][1] += v * np.sin(next_state[player][2]) * self.timestep
 
         dist_goal = np.linalg.norm(next_state['attacker'][:2] - self.goal_position)
-        #self.reward = -dist_goal
+        self.reward = np.exp(-dist_goal)
 
 
 
@@ -121,7 +121,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         # check if the car is out of bounds
         if next_state['attacker'][0] < self.observation_space['attacker'].low[0] or next_state['attacker'][0] > self.observation_space['attacker'].high[0] or next_state['attacker'][1] < self.observation_space['attacker'].low[1] or next_state['attacker'][1] > self.observation_space[player].high[1]:
             #print('out of bounds')
-            reward = -self.reward #or 0
+            reward =  self.reward #or 0
             done = False
             info = {'player': player,'is_legal':False, 'status':'out_of_bounds'}
 
@@ -146,12 +146,12 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                 info = {'player': player, 'is_legal':False, 'status':'cannot move into defender'}
                 done = False
                 next_state = state.copy()
-                reward = -self.reward
+                reward = -1
 
             else: #defender eats attacker
                 info = {'player': player, 'is_legal':True, 'status':'eaten'}
                 done = True
-                reward = -self.reward
+                reward = -1 # -self.reward
 
 
             if update_env:
@@ -160,7 +160,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             return next_state, reward, done, info
        
         if dist_goal < self.min_distance_to_goal:
-            reward = self.reward
+            reward = 1
             done = True
             info = {'player': player, 'is_legal':True, 'status':'goal_reached'}
 
@@ -170,7 +170,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             return next_state, reward, done, info
         
         else:
-            reward = 0
+            reward = self.reward
             done = False
             info = {'player': player, 'is_legal':True, 'status':'in_progress'}
             if update_env:
@@ -227,9 +227,11 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                         possible_actions.append([d_action, a_action, attacker_reward]) #reward -1 if eaten, 0 if ou
                     elif attacker_done:
                         possible_actions.append([d_action, a_action, attacker_reward]) #reward 1
+                        print('attaker reward', attacker_reward)
+
                     else:
                         next_nn_state = self.encode_state_big(next_env_state)
-                        value = reward + gamma*forward(X=next_nn_state, params=params)
+                        value = attacker_reward + gamma*forward(X=next_nn_state, params=params) #check bug
                         possible_actions.append([d_action, a_action, value[0]])
 
                     
@@ -416,11 +418,11 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         attacker_x = unnormalize_coordinate(nn_state[0], min_value, max_value)
         attacker_y = unnormalize_coordinate(nn_state[1], min_value, max_value)
-        attacker_theta = np.arctan2(nn_state[3], nn_state[2])
+        attacker_theta = np.arctan2(nn_state[3], nn_state[2]) % (2 * np.pi) 
 
         defender_x = unnormalize_coordinate(nn_state[4], min_value, max_value)
         defender_y = unnormalize_coordinate(nn_state[5], min_value, max_value)
-        defender_theta = np.arctan2(nn_state[7], nn_state[6])
+        defender_theta = np.arctan2(nn_state[7], nn_state[6]) % (2 * np.pi) 
 
         env_state = {
             'attacker': np.array([attacker_x, attacker_y, attacker_theta]),
