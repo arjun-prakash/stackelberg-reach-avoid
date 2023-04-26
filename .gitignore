@@ -20,6 +20,7 @@ var/
 .installed.cfg
 *.egg
 .env/
+src/runs/
 
 # Installer logs
 pip-log.txt

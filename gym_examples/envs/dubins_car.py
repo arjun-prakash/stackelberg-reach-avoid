@@ -82,19 +82,32 @@ class DubinsCarEnv(gym.Env):
 
             # update car position and orientation
 
-        # check if the car is out of bounds
-        if next_state[0] < self.observation_space.low[0] or next_state[0] > self.observation_space.high[0] or next_state[1] < self.observation_space.low[1] or next_state[1] > self.observation_space.high[1]:
-            done = False
-            reward = dreward
-            info = {'is_legal':False}
-            state[2] = ((next_state[2] - np.pi)) % (2 * np.pi) #np.random.uniform(low=-np.pi, high=np.pi)
-            #state = next_state #revert to previous state, but flip back
+        # # check if the car is out of bounds
+        # if next_state[0] < self.observation_space.low[0] or next_state[0] > self.observation_space.high[0] or next_state[1] < self.observation_space.low[1] or next_state[1] > self.observation_space.high[1]:
+        #     done = False
+        #     reward = dreward
+        #     info = {'is_legal':False}
+        #     state[2] = ((next_state[2] - np.pi)) % (2 * np.pi) #np.random.uniform(low=-np.pi, high=np.pi)
+        #     #state = next_state #revert to previous state, but flip back
 
 
 
-            if update_env:
-                self.update_environment(state)
-            return state, reward, done, info #make it end game, with -1
+        #     if update_env:
+        #         self.update_environment(state)
+        #     return state, reward, done, info #make it end game, with -1
+
+
+                # wrap the car around if it goes out of bounds
+        if next_state[0] < self.observation_space.low[0]:
+            next_state[0] = self.observation_space.high[0]
+        elif next_state[0] > self.observation_space.high[0]:
+            next_state[0] = self.observation_space.low[0]
+
+        if next_state[1] < self.observation_space.low[1]:
+            next_state[1] = self.observation_space.high[1]
+        elif next_state[1] > self.observation_space.high[1]:
+            next_state[1] = self.observation_space.low[1]
+
 
 
 
