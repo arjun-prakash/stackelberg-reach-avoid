@@ -49,9 +49,19 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         """
         Reset the environment and return the initial state
         """
-        self.state['attacker'] = self.observation_space['attacker'].sample()
         self.state['defender'] = np.array([0, 0., 0.], dtype=self.observation_space['defender'].dtype)
-        #self.car_position['defender'] = np.array([2,2,2])
+        
+        illegal = True
+
+        while illegal:
+            self.state['attacker'] = self.observation_space['attacker'].sample()
+            dist_capture = np.linalg.norm(self.state['attacker'][:2] - self.state['defender'][:2]) - self.capture_radius
+            dist_goal = np.linalg.norm(self.state['attacker'][:2] - self.goal_position) - self.min_distance_to_goal
+
+            if dist_capture > 0 and dist_goal > 0:
+                illegal = False
+
+        return self.state
 
 
         self.goal_position = self.goal_position
@@ -110,27 +120,6 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         self.reward = np.exp(-dist_goal)
 
 
-
-
-
-        # # check if the car is out of bounds
-        # if self.car_position[player][0] < self.observation_space[player].low[0] or self.car_position[player][0] > self.observation_space[player].high[0] or self.car_position[player][1] < self.observation_space[player].low[1] or self.car_position[player][1] > self.observation_space[player].high[1]:
-        #     print('out of bounds')
-        #     return self.car_position, -10, True, {}
-
-        # check if the car is out of bounds
-        # if next_state['attacker'][0] < self.observation_space['attacker'].low[0] or next_state['attacker'][0] > self.observation_space['attacker'].high[0] or next_state['attacker'][1] < self.observation_space['attacker'].low[1] or next_state['attacker'][1] > self.observation_space[player].high[1]:
-        #     #print('out of bounds')
-        #     reward =  self.reward #or 0
-        #     done = False
-        #     info = {'player': player,'is_legal':False, 'status':'out_of_bounds'}
-
-        #     next_state = state.copy()
-
-        #     # if update_env:
-        #     #     self.state = state
-
-        #     return state, reward, done, info
 
         if next_state[player][0] < self.observation_space[player].low[0]:
             next_state[player][0] = self.observation_space[player].high[0]
@@ -279,8 +268,8 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         fig = plt.figure()
         plt.clf()
-        plt.xlim([-5, 5])
-        plt.ylim([-5, 5])
+        plt.xlim([-self.size, self.size])
+        plt.ylim([-self.size, self.size])
 
     
 
