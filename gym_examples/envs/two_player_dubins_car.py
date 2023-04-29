@@ -293,10 +293,10 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         self.images.append(np.array(imageio.v2.imread(buf)))
         plt.close()
 
-    def make_gif(self):
+    def make_gif(self, file_name='two_player_animation_pg.gif'):
         import imageio
 
-        imageio.mimsave('two_player_animation_pg.gif', self.images, fps=30)
+        imageio.mimsave(file_name, self.images, fps=30)
 
 
 
@@ -429,3 +429,9 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         }
         return env_state
     
+    def get_legal_actions_mask(self, state, player):
+        legal_actions_mask = []
+        for action in range(self.num_actions):
+            _, _, _, info = self.step(state, action,player, update_env=False)
+            legal_actions_mask.append(int(info['is_legal']))
+        return jnp.array(legal_actions_mask)
