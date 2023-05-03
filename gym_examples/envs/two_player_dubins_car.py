@@ -13,12 +13,13 @@ from envs.dubins_car import DubinsCarEnv
 class TwoPlayerDubinsCarEnv(DubinsCarEnv):
     metadata = {'render.modes': ['human']}
 
-    def __init__(self):
+    def __init__(self, game_type='Nash'):
         super().__init__()
 
+        self.game_type = game_type
 
         self.players = ['defender', 'attacker']
-        self.num_actions = 4
+        self.num_actions = 3
         self.action_space = {'attacker':spaces.Discrete(self.num_actions), 'defender':spaces.Discrete(self.num_actions)}
 
         self.size = 4
@@ -31,7 +32,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         self.state = {'attacker': np.array([0,0,0]), 'defender':np.array([0,0,np.pi])}
 
-        self.goal_position = np.array([3,0]) # position of the goal
+        self.goal_position = np.array([0,0]) # position of the goal
         self.capture_radius = 0.5 # radius of the obstacle
 
 
@@ -52,9 +53,12 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         self.state['defender'] = np.array([0, 0., 0.], dtype=self.observation_space['defender'].dtype)
         
         illegal = True
+        epsilon = 0.25
 
         while illegal:
             self.state['attacker'] = self.observation_space['attacker'].sample()
+            #self.state['defender'] = self.observation_space['defender'].sample()
+
             dist_capture = np.linalg.norm(self.state['attacker'][:2] - self.state['defender'][:2]) - self.capture_radius
             dist_goal = np.linalg.norm(self.state['attacker'][:2] - self.goal_position) - self.min_distance_to_goal
 
@@ -117,7 +121,9 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         next_state[player][1] += v * np.sin(next_state[player][2]) * self.timestep
 
         dist_goal = np.linalg.norm(next_state['attacker'][:2] - self.goal_position)
-        self.reward = np.exp(-dist_goal)
+
+        #self.reward = -dist_goal/4
+
 
 
 
@@ -135,22 +141,25 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         
         
 
-        dist_capture = np.linalg.norm(next_state['attacker'][:2] - next_state['defender'][:2]) - self.capture_radius
+        dist_capture = np.linalg.norm(next_state['attacker'][:2] - next_state['defender'][:2]) 
+
+        self.reward = np.exp(-dist_goal) - np.exp(-dist_capture)
+
       
         
-        if dist_capture < 0:
+        if dist_capture < self.capture_radius:
 
 
             if player == 'attacker':
                 info = {'player': player, 'is_legal':False, 'status':'cannot move into defender'}
-                done = False
+                done = True
                 next_state = state.copy()
-                reward = -1
+                reward = -10
 
             else: #defender eats attacker
                 info = {'player': player, 'is_legal':True, 'status':'eaten'}
                 done = True
-                reward = -1 # -self.reward
+                reward = -10 # -self.reward
 
 
             if update_env:
@@ -159,7 +168,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             return next_state, reward, done, info
        
         if dist_goal < self.min_distance_to_goal:
-            reward = 1
+            reward = 10
             done = True
             info = {'player': player, 'is_legal':True, 'status':'goal_reached'}
 
