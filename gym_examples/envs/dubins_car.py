@@ -142,7 +142,7 @@ class DubinsCarEnv(gym.Env):
 
         else:
             state = next_state
-            reward = dreward
+            reward = 0# dreward
             done = False
             info = {'is_legal':True}
             if update_env:
@@ -353,6 +353,8 @@ class DubinsCarEnv(gym.Env):
         import imageio
 
         imageio.mimsave('animation_pg.gif', self.images, fps=30)
+        self.images = []
+
 
 
 

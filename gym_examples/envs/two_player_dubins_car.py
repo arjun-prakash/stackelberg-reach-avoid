@@ -59,8 +59,8 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             self.state['attacker'] = self.observation_space['attacker'].sample()
             #self.state['defender'] = self.observation_space['defender'].sample()
 
-            dist_capture = np.linalg.norm(self.state['attacker'][:2] - self.state['defender'][:2]) - self.capture_radius
-            dist_goal = np.linalg.norm(self.state['attacker'][:2] - self.goal_position) - self.min_distance_to_goal
+            dist_capture = np.linalg.norm(self.state['attacker'][:2] - self.state['defender'][:2]) - self.capture_radius - 1
+            dist_goal = np.linalg.norm(self.state['attacker'][:2] - self.goal_position) - self.min_distance_to_goal - 1
 
             if dist_capture > 0 and dist_goal > 0:
                 illegal = False
@@ -143,7 +143,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         dist_capture = np.linalg.norm(next_state['attacker'][:2] - next_state['defender'][:2]) 
 
-        self.reward = np.exp(-dist_goal) - np.exp(-dist_capture)
+        #self.reward = np.exp(-dist_goal) - np.exp(-dist_capture)
 
       
         
@@ -178,7 +178,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             return next_state, reward, done, info
         
         else:
-            reward = self.reward
+            reward = 0 #self.reward
             done = False
             info = {'player': player, 'is_legal':True, 'status':'in_progress'}
             if update_env:
@@ -306,6 +306,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         import imageio
 
         imageio.mimsave(file_name, self.images, fps=30)
+        self.images = []
 
 
 
