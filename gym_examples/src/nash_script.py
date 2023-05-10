@@ -24,7 +24,7 @@ import pickle
 
 
 # Define the policy network
-def policy_network(observation):
+def policy_network_nash(observation):
     net = hk.Sequential([
         hk.Linear(64), jax.nn.relu,
         hk.Linear(64), jax.nn.relu,
@@ -33,10 +33,31 @@ def policy_network(observation):
     ])
     return net(observation)
 
+def policy_network_stackelberg(observation, legal_moves):
+    net = hk.Sequential([
+        hk.Linear(64), jax.nn.relu,
+        hk.Linear(64), jax.nn.relu,
+        hk.Linear(env.num_actions),
+        jax.nn.softmax
+
+    ])
+    logits = net(observation)
+
+    masked_logits = jnp.multiply(logits, legal_moves)
+    probabilities = jax.nn.softmax(masked_logits)
+    return probabilities
 
 
-def test_policy(env, params, policy_net, state=None, make_gif=True, filename='episode.gif'):
-    policy_net = hk.without_apply_rng(hk.transform(policy_network))
+
+
+def test_policy(env, params, policy_net, state=None, game_type='nash', make_gif=True, filename='episode.gif'):
+    
+    if game_type == 'nash':
+        policy_net = hk.without_apply_rng(hk.transform(policy_network_nash))
+    elif game_type == 'stackelberg':
+        policy_net = hk.without_apply_rng(hk.transform(policy_network_stackelberg))
+    
+    
     key = jax.random.PRNGKey(1)
 
     if state is None:
@@ -54,9 +75,13 @@ def test_policy(env, params, policy_net, state=None, make_gif=True, filename='ep
         
             key, subkey = jax.random.split(key)
 
-            #legal_actions_mask = env.get_legal_actions_mask(state, player)
+            if game_type == 'nash':
+                probs = policy_net.apply(params[player], nn_state)
+            elif game_type == 'stackelberg':
+                legal_actions_mask = env.get_legal_actions_mask(state, player)
+                probs = policy_net.apply(params[player], nn_state, legal_actions_mask)
 
-            probs = policy_net.apply(params[player], nn_state)
+
 
             
             action = jax.random.categorical(subkey, probs)
@@ -75,8 +100,8 @@ def test_policy(env, params, policy_net, state=None, make_gif=True, filename='ep
     
 
 
-def save_params(episode_num, params):
-    with open(f'data/nash_{episode_num}_params.pickle', 'wb') as handle:
+def save_params(episode_num, params, game_type):
+    with open(f'data/{game_type}{episode_num}_params.pickle', 'wb') as handle:
         pickle.dump(params, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 
@@ -90,13 +115,13 @@ def calculate_returns(rewards):
         returns.append(G)
     return returns[::-1]  # reverse the list
 
-def get_values(grid, trained_params, policy_net, num_episodes=2):
+def get_values(grid, trained_params, policy_net, game_type, num_episodes=2):
     values= []
     for i in tqdm(range(len(grid))):
         v = []
         for e in range(num_episodes):
             state = env.set(grid[i][0], grid[i][1], grid[i][2])
-            episode_rewards = test_policy(env, trained_params, policy_net, state=state, make_gif=False)
+            episode_rewards = test_policy(env, trained_params, policy_net, state=state, game_type=game_type, make_gif=False)
             returns = calculate_returns(episode_rewards)
             v.append(returns[0])
 
@@ -106,7 +131,7 @@ def get_values(grid, trained_params, policy_net, num_episodes=2):
     return np.array(values)
 
 
-def get_q_values(grid, trained_params, policy_net, num_episodes=2):
+def get_q_values(grid, trained_params, policy_net, game_type, num_episodes=2):
     max_q = []
     for i in tqdm(range(len(grid))):
         q_values =[] #the q values for each pair of actions
@@ -124,7 +149,7 @@ def get_q_values(grid, trained_params, policy_net, num_episodes=2):
                     defender_state['defender'][0], defender_state['defender'][1], defender_state['defender'][2])
 
                     state,a_reward,_, _ = env.step(i, a_action, 'attacker', update_env=True) #step through the attacker move
-                    episode_rewards = [a_reward] + test_policy(env, trained_params, policy_net, state, make_gif=False) #rollout the trajectory
+                    episode_rewards = [a_reward] + test_policy(env, trained_params, policy_net,state, game_type=game_type, make_gif=False) #rollout the trajectory
                     returns = calculate_returns(episode_rewards)
                     possible_actions_a.append(returns[0]) #append the reward of the state
 
@@ -142,8 +167,8 @@ def get_q_values(grid, trained_params, policy_net, num_episodes=2):
     return np.array(max_q)
 
 
-def calculate_bellman_error(grid, trained_params, policy_net, num_episodes=10):
-    return np.max(get_values(grid, trained_params, policy_net,num_episodes) - get_q_values(grid, trained_params, policy_net,num_episodes))
+def calculate_bellman_error(grid, trained_params, policy_net, game_type, num_episodes=10):
+    return np.max(get_values(grid, trained_params, policy_net, game_type ,num_episodes) - get_q_values(grid, trained_params, policy_net, game_type,num_episodes))
 
 
 def make_grid():
@@ -158,7 +183,7 @@ def make_grid():
 # Implement the REINFORCE algorithm
 def reinforce_nash(env, num_episodes, learning_rate, gamma, batch_size, epsilon_start, epsilon_end, epsilon_decay):
     # Initialize Haiku policy network
-    policy_net = hk.without_apply_rng(hk.transform(policy_network))
+    policy_net = hk.without_apply_rng(hk.transform(policy_network_nash))
     initial_state = env.reset()
     initial_state_nn = env.encode_helper(initial_state)
 
@@ -295,6 +320,7 @@ def reinforce_nash(env, num_episodes, learning_rate, gamma, batch_size, epsilon_
             #     break
                 
             traj_length.append(episode_length)
+            writer.add_scalar('trajectory length', np.array(episode_length), episode)
 
         if save:
             env.make_gif(f'gifs/nash_script/{episode}.gif')
@@ -367,12 +393,286 @@ def reinforce_nash(env, num_episodes, learning_rate, gamma, batch_size, epsilon_
             traj_length = []
 
         if save:
-            save_params(episode, params)
-            bellman_error = calculate_bellman_error(grid,params, policy_network, num_episodes=2)
-            SummaryWriter('bellman_error', bellman_error, episode)
+            save_params(episode, params, game_type='nash')
+            bellman_error = calculate_bellman_error(grid,params, policy_network_nash, game_type='nash', num_episodes=2)
+            writer.add_scalar('bellman_error', bellman_error, episode)
                 
             
     return params
+
+
+    # Implement the REINFORCE algorithm
+
+
+def reinforce_stackelberg(env, num_episodes, learning_rate, gamma, batch_size, epsilon_start, epsilon_end, epsilon_decay):
+   
+    # Define loss function
+    @jax.jit
+    def loss_attacker(params, observations, actions, returns, masks): #apply no grad to returns maybe
+        action_probabilities = policy_net.apply(params, observations, masks)
+        log_probs = jnp.log(jnp.take_along_axis(action_probabilities, actions[..., None], axis=-1))
+        return -jnp.mean(log_probs * jax.lax.stop_gradient(returns)) #Maybe
+
+    @jax.jit
+    def loss_defender(params, observations, actions, returns, masks): #apply no grad to returns maybe
+        action_probabilities = policy_net.apply(params, observations, masks)
+        log_probs = jnp.log(jnp.take_along_axis(action_probabilities, actions[..., None], axis=-1))
+        return jnp.mean(log_probs * jax.lax.stop_gradient(returns)) #Maybe
+
+    # Define update function
+    
+    @jax.jit
+    def update_defender(params, opt_state, observations, actions, returns, masks):
+        grads = jax.grad(loss_defender)(params, observations, actions, returns, masks)
+        updates, opt_state = optimizer['defender'].update(grads, params=params, state=opt_state)
+        return optax.apply_updates(params, updates), opt_state
+    
+    @jax.jit
+    def update_attacker(params, opt_state, observations, actions, returns, masks):
+        grads = jax.grad(loss_attacker)(params, observations, actions, returns, masks)
+        updates, opt_state = optimizer['attacker'].update(grads, params=params, state=opt_state)
+        return optax.apply_updates(params, updates), opt_state
+    
+    def get_legal_actions_mask(state, player, env):
+        legal_actions_mask = []
+        for action in range(env.num_actions):
+            _, _, _, info = env.step(state, action,player, update_env=False)
+            legal_actions_mask.append(int(info['is_legal']))
+        return jnp.array(legal_actions_mask)
+
+
+    def select_action(nn_state, params, legal_actions_mask, key, epsilon):
+        if jax.random.uniform(key) < epsilon:
+            legal_actions_indices = jnp.arange(len(legal_actions_mask))[legal_actions_mask.astype(bool)]
+            return jax.random.choice(key, legal_actions_indices)
+        else:
+            probs = policy_net.apply(params, nn_state, legal_actions_mask)
+            return jax.random.categorical(key, probs)
+
+
+
+     # Initialize Haiku policy network
+    policy_net = hk.without_apply_rng(hk.transform(policy_network_stackelberg))
+    initial_state = env.reset()
+    initial_state_nn = env.encode_helper(initial_state)
+    params = {player: policy_net.init(jax.random.PRNGKey(42), initial_state_nn, get_legal_actions_mask(initial_state, player, env)) for player in env.players}
+    
+    grid = make_grid()
+
+
+    # Define the optimizer
+    agent_optimizer = optax.chain(
+          optax.clip(1.0),
+          optax.adam(learning_rate=learning_rate)
+        )
+
+    optimizer = {player: agent_optimizer for player in env.players}  
+    opt_state = {player: optimizer[player].init(params[player]) for player in env.players}
+
+
+    all_wins, all_traj_lengths = [], []
+    # Train the policy network
+    batch_states = {player: [] for player in env.players}
+    batch_actions = {player: [] for player in env.players}
+    batch_returns = {player: [] for player in env.players}
+    batch_masks = {player: [] for player in env.players}
+
+    wins = {player: 0 for player in env.players+['draw']}
+    traj_length = []
+
+    epsilon = epsilon_start
+
+    training_routine = ['defender']*batch_size + ['attacker']*batch_size*2
+    run = -1
+
+    for episode in range(num_episodes):
+        for training_player in training_routine: #first train defender, then fix the defender policy, train attacker response
+            run+=1
+            key = jax.random.PRNGKey(episode)
+            valid = True
+            state = env.reset()
+            nn_state = env.encode_helper(state)
+            
+            states = {player: [] for player in env.players}
+            actions = {player: [] for player in env.players}
+            rewards = {player: [] for player in env.players}
+            masks = {player: [] for player in env.players}
+            episode_length = 0
+            print(f"Episode {episode}, run {run} started...")
+            
+            
+            done = False
+            valid=True
+            defender_wins = False
+            attacker_wins = False
+
+            if run % 500 == 0:
+                save=True
+            else:
+                save=False
+
+
+            while not done and not defender_wins and not attacker_wins and episode_length < 200:
+                
+                for player in env.players:            
+
+
+                    key, subkey = jax.random.split(key)
+                    legal_actions_mask = env.get_legal_actions_mask(state, player)
+
+                    if sum(legal_actions_mask) == 0:
+                        valid = False
+                        break
+                    states[player].append(nn_state)
+
+                    
+                    
+
+                    
+                    action = select_action(nn_state, params[player], legal_actions_mask, subkey, epsilon)  # Use the new function here
+
+                    
+
+                    state, reward, done, info = env.step(state=state, action=action, player=player, update_env=True)
+                    nn_state = env.encode_helper(state)
+                    actions[player].append(action)
+                    rewards[player].append(reward)
+                    masks[player].append(legal_actions_mask)
+                    episode_length += 1
+                    #print(done)
+
+
+                    if done and player == 'defender': #only attacker can end the game, iterate one more time
+                        defender_wins = True
+                        wins['defender'] = 1
+
+                    if (defender_wins and player == 'attacker'): #overwrite the attacker's last reward
+                        rewards['attacker'][-1] = -10
+                        break
+
+                    if (done and player == 'attacker'): #break if attacker wins, game is over
+                        if info['is_legal']:
+                            attacker_wins = True
+                            wins['attacker'] = 1
+                        elif not info['is_legal']:
+                            defender_wins = True
+                            wins['defender'] = 1
+                        break
+                    if save:
+                        env.render()
+                
+                if not valid:
+                    break
+                
+                traj_length.append(episode_length)
+                writer.add_scalar('trajectory length', np.array(episode_length), episode)
+                # if jax.random.uniform(subkey) < 1 - gamma:
+                #     print('game ended by gamma after ', episode_length, ' steps')
+                #     wins['draw'] = 1
+                #     break
+                
+           
+
+            if save:
+                env.make_gif(f'gifs/stackelberg_script/{run}.gif')
+                    
+            if not attacker_wins and not defender_wins: #if defender wins, done would actually be false
+                wins['draw'] = 1
+
+            epsilon = max(epsilon_end, epsilon * epsilon_decay)
+            returns = {player: [] for player in env.players}
+
+            for player in env.players:
+                G = 0
+                for r in reversed(rewards['attacker']):
+                    G = r + gamma*G
+                    returns[player].append(G)
+
+                returns[player] = returns[player][::-1]
+                    
+                
+                batch_states[player].extend(states[player])
+                batch_actions[player].extend(actions[player])
+                batch_returns[player].extend(returns[player])
+                batch_masks[player].extend(masks[player])
+
+            #need to make it stackelberg, first let defender learn, then attacker plays against defender
+            if (episode + 1) % batch_size == 0 and valid and training_player == 'defender':
+                
+                params['defender'], opt_state['defender'] = update_defender(params['defender'], 
+                                                                            opt_state['defender'], 
+                                                                            np.array(batch_states['defender']), 
+                                                                            np.array(batch_actions['defender']), 
+                                                                            np.array(batch_returns['defender']), 
+                                                                            np.array(batch_masks['defender']))
+                print('training defender')
+                all_wins.append(wins)
+                all_traj_lengths.append(np.mean(traj_length))
+                print('average_length', np.mean(traj_length))
+
+                #writer.add_scalar(f'live/defender', np.array(np.mean(batch_returns['defender'])), episode)
+
+               
+
+                # Clear the batch
+                batch_states = {player: [] for player in env.players}
+                batch_actions = {player: [] for player in env.players}
+                batch_returns = {player: [] for player in env.players}
+                batch_masks = {player: [] for player in env.players}
+                #wins = {player: 0 for player in env.players+['draw']}
+                traj_length = []
+                    
+            if (episode + 1) % batch_size == 0 and valid and training_player == 'attacker':
+                    
+                params['attacker'], opt_state['attacker'] = update_attacker(params['attacker'], 
+                                                                            opt_state['attacker'], 
+                                                                            np.array(batch_states['attacker']), 
+                                                                            np.array(batch_actions['attacker']), 
+                                                                            np.array(batch_returns['attacker']),
+                                                                            np.array(batch_masks['attacker']))
+                print('training attacker')
+                #writer.add_scalar(f'live/attacker', np.array(np.mean(batch_returns['attacker'])), episode)
+                # writer.add_scalars('returns', {'defender': np.array(np.mean(batch_returns['defender'])),
+                #                'attacker': np.array(np.mean(batch_returns['attacker']))},
+                #    run)
+                # print('average_length', np.mean(traj_length))
+
+                # print('wins', wins)
+                # writer.add_scalars('num_wins', {'defender':np.array(wins['defender']),'attacker':np.array(wins['attacker']), 'draw': np.array(wins['draw'])}, run)
+
+
+                all_wins.append(wins)
+
+
+                all_traj_lengths.append(np.mean(traj_length))
+                # Clear the batch
+                batch_states = {player: [] for player in env.players}
+                batch_actions = {player: [] for player in env.players}
+                batch_returns = {player: [] for player in env.players}
+                batch_masks = {player: [] for player in env.players}
+                #wins = {player: 0 for player in env.players+['draw']}
+
+                traj_length = []
+
+
+
+            writer.add_scalars('returns', {'defender': np.array(np.mean(batch_returns['defender'])),
+                               'attacker': np.array(np.mean(batch_returns['attacker']))},
+                   run)
+
+            print('TRAINING_PLAYER', training_player, 'WINS', wins)
+            writer.add_scalars('num_wins', {'defender':np.array(wins['defender']),'attacker':np.array(wins['attacker']), 'draw': np.array(wins['draw'])}, run)
+            wins = {player: 0 for player in env.players+['draw']}   
+
+
+            if save:
+                save_params(episode, params, game_type='stackelberg')
+                bellman_error = calculate_bellman_error(grid,params, policy_network_stackelberg, game_type='stackelberg', num_episodes=2)
+                writer.add_scalar('bellman_error', bellman_error, episode)
+                
+    return params
+
+
 
 
 
@@ -380,17 +680,19 @@ def reinforce_nash(env, num_episodes, learning_rate, gamma, batch_size, epsilon_
 
 if __name__ == "__main__":
     # Train the agent using REINFORCE algorithm
-    writer = SummaryWriter(f'runs/nash_script_' + str(datetime.datetime.now()))
+    #writer = SummaryWriter(f'runs/nash_script_' + str(datetime.datetime.now()))
+    writer = SummaryWriter(f'runs/stackelberg_script_' + str(datetime.datetime.now()))
+
 
     env = TwoPlayerDubinsCarEnv()
 
     learning_rate = 1e-6#1e-3
     gamma = 0.99
-    batch_size = 1
-    num_episodes = 600
+    batch_size = 100
+    num_episodes = 1
 
 
 
-    trained_params = reinforce_nash(env, num_episodes=num_episodes, learning_rate=learning_rate, 
+    trained_params = reinforce_stackelberg(env, num_episodes=num_episodes, learning_rate=learning_rate, 
                                     gamma=gamma, batch_size=batch_size,
                                     epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.99)
