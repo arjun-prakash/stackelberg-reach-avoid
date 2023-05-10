@@ -50,6 +50,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         """
         Reset the environment and return the initial state
         """
+        
         self.state['defender'] = np.array([0, 0., 0.], dtype=self.observation_space['defender'].dtype)
         
         illegal = True
@@ -71,7 +72,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         self.goal_position = self.goal_position
         return self.state
     
-    def set(self, ax, ay, atheta, dx, dy, dtheta):
+    def set(self, ax, ay, atheta, dx=0., dy=0., dtheta=0.):
         """
         Reset the environment and return the initial state
         """
