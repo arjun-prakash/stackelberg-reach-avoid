@@ -1,5 +1,4 @@
-# Gym Examples
-Repo for Convex-Concave 0-Sum Stochastic Stackelberg Games
+# Convex-Concave 0-Sum Stochastic Stackelberg Games
 
 
 ### Environments
