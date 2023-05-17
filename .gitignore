@@ -20,7 +20,9 @@ var/
 .installed.cfg
 *.egg
 .env/
-
+src/runs/
+src/data
+*.pickle
 # Installer logs
 pip-log.txt
 pip-delete-this-directory.txt

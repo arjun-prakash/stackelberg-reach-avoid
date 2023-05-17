@@ -13,12 +13,13 @@ from envs.dubins_car import DubinsCarEnv
 class TwoPlayerDubinsCarEnv(DubinsCarEnv):
     metadata = {'render.modes': ['human']}
 
-    def __init__(self):
+    def __init__(self, game_type='Nash'):
         super().__init__()
 
+        self.game_type = game_type
 
         self.players = ['defender', 'attacker']
-        self.num_actions = 4
+        self.num_actions = 3
         self.action_space = {'attacker':spaces.Discrete(self.num_actions), 'defender':spaces.Discrete(self.num_actions)}
 
         self.size = 4
@@ -31,7 +32,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         self.state = {'attacker': np.array([0,0,0]), 'defender':np.array([0,0,np.pi])}
 
-        self.goal_position = np.array([3,0]) # position of the goal
+        self.goal_position = np.array([0,0]) # position of the goal
         self.capture_radius = 0.5 # radius of the obstacle
 
 
@@ -43,21 +44,36 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         self.v_max = 0.25 # maximum speed
         self.omega_max = 65 * np.pi/180  # maximum angular velocity (radians)
         self.images = []
+        self.positions = {'attacker': [], 'defender': []}
         
 
     def reset(self):
         """
         Reset the environment and return the initial state
         """
-        self.state['attacker'] = self.observation_space['attacker'].sample()
-        self.state['defender'] = np.array([0, 0, np.pi], dtype=self.observation_space['defender'].dtype)
-        #self.car_position['defender'] = np.array([2,2,2])
+        
+        self.state['defender'] = np.array([0, 0., 0.], dtype=self.observation_space['defender'].dtype)
+        
+        illegal = True
+        epsilon = 0.25
+
+        while illegal:
+            self.state['attacker'] = self.observation_space['attacker'].sample()
+            #self.state['defender'] = self.observation_space['defender'].sample()
+
+            dist_capture = np.linalg.norm(self.state['attacker'][:2] - self.state['defender'][:2]) - self.capture_radius - 1
+            dist_goal = np.linalg.norm(self.state['attacker'][:2] - self.goal_position) - self.min_distance_to_goal - 1
+
+            if dist_capture > 0 and dist_goal > 0:
+                illegal = False
+
+        return self.state
 
 
         self.goal_position = self.goal_position
         return self.state
     
-    def set(self, ax, ay, atheta, dx, dy, dtheta):
+    def set(self, ax, ay, atheta, dx=0., dy=0., dtheta=0.):
         """
         Reset the environment and return the initial state
         """
@@ -107,51 +123,45 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         next_state[player][1] += v * np.sin(next_state[player][2]) * self.timestep
 
         dist_goal = np.linalg.norm(next_state['attacker'][:2] - self.goal_position)
-        #self.reward = -dist_goal
+
+        #self.reward = -dist_goal/4
 
 
 
 
+        if next_state[player][0] < self.observation_space[player].low[0]:
+            next_state[player][0] = self.observation_space[player].high[0]
+        elif next_state[player][0] > self.observation_space[player].high[0]:
+            next_state[player][0] = self.observation_space[player].low[0]
 
-        # # check if the car is out of bounds
-        # if self.car_position[player][0] < self.observation_space[player].low[0] or self.car_position[player][0] > self.observation_space[player].high[0] or self.car_position[player][1] < self.observation_space[player].low[1] or self.car_position[player][1] > self.observation_space[player].high[1]:
-        #     print('out of bounds')
-        #     return self.car_position, -10, True, {}
-
-        # check if the car is out of bounds
-        if next_state['attacker'][0] < self.observation_space['attacker'].low[0] or next_state['attacker'][0] > self.observation_space['attacker'].high[0] or next_state['attacker'][1] < self.observation_space['attacker'].low[1] or next_state['attacker'][1] > self.observation_space[player].high[1]:
-            #print('out of bounds')
-            reward = -self.reward #or 0
-            done = False
-            info = {'player': player,'is_legal':False, 'status':'out_of_bounds'}
-
-            next_state = state.copy()
-
-            # if update_env:
-            #     self.state = state
-
-            return state, reward, done, info
+        if next_state[player][1] < self.observation_space[player].low[1]:
+            next_state[player][1] = self.observation_space[player].high[1]
+        elif next_state[player][1] > self.observation_space[player].high[1]:
+            next_state[player][1] = self.observation_space[player].low[1]
 
 
         
         
 
-        dist_capture = np.linalg.norm(next_state['attacker'][:2] - next_state['defender'][:2]) - self.capture_radius
+        dist_capture = np.linalg.norm(next_state['attacker'][:2] - next_state['defender'][:2]) 
+
+        #self.reward = np.exp(-dist_goal) - np.exp(-dist_capture)
+
       
         
-        if dist_capture < 0:
+        if dist_capture < self.capture_radius:
 
 
             if player == 'attacker':
                 info = {'player': player, 'is_legal':False, 'status':'cannot move into defender'}
-                done = False
+                done = True
                 next_state = state.copy()
-                reward = -self.reward
+                reward = -10
 
             else: #defender eats attacker
                 info = {'player': player, 'is_legal':True, 'status':'eaten'}
                 done = True
-                reward = -self.reward
+                reward = -10 # -self.reward
 
 
             if update_env:
@@ -160,7 +170,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             return next_state, reward, done, info
        
         if dist_goal < self.min_distance_to_goal:
-            reward = self.reward
+            reward = 10
             done = True
             info = {'player': player, 'is_legal':True, 'status':'goal_reached'}
 
@@ -170,7 +180,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             return next_state, reward, done, info
         
         else:
-            reward = 0
+            reward = 0 #self.reward
             done = False
             info = {'player': player, 'is_legal':True, 'status':'in_progress'}
             if update_env:
@@ -216,7 +226,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
     def sample_value_iter(self,X_batch, forward, params, gamma):
         y_hat = []
         for state in X_batch:
-            env_state = self.state_for_env(state)
+            env_state = self.decode_state_big(state)
             possible_actions = []
             for d_action in range(self.action_space['defender'].n):
                 env_state_ , reward, done, info = self.step(env_state, d_action, 'defender')
@@ -227,9 +237,11 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                         possible_actions.append([d_action, a_action, attacker_reward]) #reward -1 if eaten, 0 if ou
                     elif attacker_done:
                         possible_actions.append([d_action, a_action, attacker_reward]) #reward 1
+                        print('attaker reward', attacker_reward)
+
                     else:
-                        next_nn_state = self.state_for_nn(next_env_state)
-                        value = reward + gamma*forward(X=next_nn_state, params=params)
+                        next_nn_state = self.encode_state_big(next_env_state)
+                        value = attacker_reward + gamma*forward(X=next_nn_state, params=params) #check bug
                         possible_actions.append([d_action, a_action, value[0]])
 
                     
@@ -267,9 +279,31 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         fig = plt.figure()
         plt.clf()
-        plt.xlim([-5, 5])
-        plt.ylim([-5, 5])
+        plt.xlim([-self.size, self.size])
+        plt.ylim([-self.size, self.size])
 
+        # self.positions['attacker'].append(np.array(self.state['attacker'][:2].copy()))
+        # self.positions['defender'].append(np.array(self.state['defender'][:2].copy()))
+
+                # Append current positions and orientations to respective lists
+        self.positions['attacker'].append((self.state['attacker'][:2].copy(), self.state['attacker'][2]))
+        self.positions['defender'].append((self.state['defender'][:2].copy(), self.state['defender'][2]))
+
+
+
+        #  # After adding the attacker, defender and goal
+        # for player, positions in self.positions.items():
+        #     color = 'b' if player == 'attacker' else 'r'
+        #     for pos in positions:
+        #         plt.plot(*pos, marker='o', markersize=2, color=color)
+
+# Plot trails for each player
+        for player, pos_orients in self.positions.items():
+            color = 'b' if player == 'attacker' else 'r'
+            for pos, orient in pos_orients:
+                dx = 0.1 * np.cos(orient)
+                dy = 0.1 * np.sin(orient)
+                plt.arrow(*pos, dx, dy, color=color, head_width=0.1, head_length=0.1)
     
 
         attacker = plt.Circle((self.state['attacker'][0], self.state['attacker'][1]), 0.1, color='b', fill=True)
@@ -284,6 +318,8 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         plt.gca().add_artist(defender)
         plt.gca().add_artist(goal)
 
+        
+
         #print('saving')
         # save current figure to images list
         buf = io.BytesIO()
@@ -292,10 +328,15 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         self.images.append(np.array(imageio.v2.imread(buf)))
         plt.close()
 
-    def make_gif(self):
+    def make_gif(self, file_name='two_player_animation_pg.gif'):
         import imageio
 
-        imageio.mimsave('two_player_animation.gif', self.images, fps=30)
+        end_state = self.images[-1]
+        imageio.mimsave(file_name, self.images, fps=30)
+        self.images = []
+        self.positions = {'attacker': [], 'defender': []}
+
+        return end_state
 
 
 
@@ -329,7 +370,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         return env_state
 
 
-    def state_for_nn(self, env_state):
+    def norm_state_for_nn(self, env_state):
         min_value = -4
         max_value = 4
 
@@ -344,3 +385,93 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             np.sin(env_state['defender'][2])
         ])
         return nn_state
+    
+    
+    
+    def encode_helper(self, env_state):
+        min_value = -self.size
+        max_value = self.size
+
+        def normalize_coordinate(coordinate, min_value, max_value):
+            return (coordinate - min_value) / (max_value - min_value)
+
+        goal_position = self.goal_position
+        attacker_state = env_state['attacker']
+        defender_state = env_state['defender']
+
+        attacker_x_norm = normalize_coordinate(attacker_state[0], min_value, max_value)
+        attacker_y_norm = normalize_coordinate(attacker_state[1], min_value, max_value)
+        attacker_theta = attacker_state[2]
+
+        defender_x_norm = normalize_coordinate(defender_state[0], min_value, max_value)
+        defender_y_norm = normalize_coordinate(defender_state[1], min_value, max_value)
+        defender_theta = defender_state[2]
+
+        goal_x_norm = normalize_coordinate(goal_position[0], min_value, max_value)
+        goal_y_norm = normalize_coordinate(goal_position[1], min_value, max_value)
+
+        distance_attacker_goal = np.linalg.norm(np.array([goal_x_norm, goal_y_norm]) - np.array([attacker_x_norm, attacker_y_norm]))
+        direction_attacker_goal = np.arctan2(goal_y_norm - attacker_y_norm, goal_x_norm - attacker_x_norm)
+
+        angle_diff_attacker_goal = direction_attacker_goal - attacker_theta
+        angle_diff_attacker_goal = (angle_diff_attacker_goal + np.pi) % (2 * np.pi) - np.pi
+        facing_goal_attacker = np.cos(angle_diff_attacker_goal)
+
+        distance_attacker_defender = np.linalg.norm(np.array([defender_x_norm, defender_y_norm]) - np.array([attacker_x_norm, attacker_y_norm]))
+        direction_attacker_defender = np.arctan2(defender_y_norm - attacker_y_norm, defender_x_norm - attacker_x_norm)
+
+        angle_diff_attacker_defender = direction_attacker_defender - attacker_theta
+        angle_diff_attacker_defender = (angle_diff_attacker_defender + np.pi) % (2 * np.pi) - np.pi
+        facing_defender_attacker = np.cos(angle_diff_attacker_defender)
+
+        angle_diff_defender_attacker = direction_attacker_defender - defender_theta + np.pi
+        angle_diff_defender_attacker = (angle_diff_defender_attacker + np.pi) % (2 * np.pi) - np.pi
+        facing_attacker_defender = np.cos(angle_diff_defender_attacker)
+
+        nn_state = np.array([attacker_x_norm, 
+                             attacker_y_norm, 
+                             np.cos(attacker_theta), 
+                             np.sin(attacker_theta), 
+                             defender_x_norm, 
+                             defender_y_norm, 
+                             np.cos(defender_theta), 
+                             np.sin(defender_theta), 
+                             distance_attacker_goal, 
+                             facing_goal_attacker, 
+                             distance_attacker_defender, 
+                             facing_defender_attacker,
+                             facing_attacker_defender
+                            ])
+        
+
+        
+        return nn_state
+
+    
+    def decode_helper(self, nn_state):
+        min_value = -self.size
+        max_value = self.size
+
+        def unnormalize_coordinate(coordinate, min_value, max_value):
+            return coordinate * (max_value - min_value) + min_value
+
+        attacker_x = unnormalize_coordinate(nn_state[0], min_value, max_value)
+        attacker_y = unnormalize_coordinate(nn_state[1], min_value, max_value)
+        attacker_theta = np.arctan2(nn_state[3], nn_state[2]) % (2 * np.pi) 
+
+        defender_x = unnormalize_coordinate(nn_state[4], min_value, max_value)
+        defender_y = unnormalize_coordinate(nn_state[5], min_value, max_value)
+        defender_theta = np.arctan2(nn_state[7], nn_state[6]) % (2 * np.pi) 
+
+        env_state = {
+            'attacker': np.array([attacker_x, attacker_y, attacker_theta]),
+            'defender': np.array([defender_x, defender_y, defender_theta])
+        }
+        return env_state
+    
+    def get_legal_actions_mask(self, state, player):
+        legal_actions_mask = []
+        for action in range(self.num_actions):
+            _, _, _, info = self.step(state, action,player, update_env=False)
+            legal_actions_mask.append(int(info['is_legal']))
+        return jnp.array(legal_actions_mask)

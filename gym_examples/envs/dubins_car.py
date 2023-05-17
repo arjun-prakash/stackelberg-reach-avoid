@@ -16,7 +16,7 @@ class DubinsCarEnv(gym.Env):
         self.min_distance_to_goal = 1 # minimum distance to goal to consider the task as done
         self.timestep = 1 # timestep in seconds
         self.v_max = 0.25 # maximum speed
-        self.omega_max = 90 * np.pi/180  # maximum angular velocity (radians)
+        self.omega_max = 65 * np.pi/180  # maximum angular velocity (radians)
         self.images = []
         self.reward = 1
         #self.reset()
@@ -76,23 +76,38 @@ class DubinsCarEnv(gym.Env):
         # print('state', state)
         # print('next_state', next_state)
         
-            
+        dist_goal = np.linalg.norm(next_state[:2] - self.goal_position) - self.min_distance_to_goal
+        dreward = np.exp(-dist_goal)
+
 
             # update car position and orientation
 
-        # check if the car is out of bounds
-        if next_state[0] < self.observation_space.low[0] or next_state[0] > self.observation_space.high[0] or next_state[1] < self.observation_space.low[1] or next_state[1] > self.observation_space.high[1]:
-            done = False
-            reward = 0
-            info = {'is_legal':False}
-            #state[2] = ((next_state[2] - np.pi)) % (2 * np.pi) #np.random.uniform(low=-np.pi, high=np.pi)
-            state = next_state #revert to previous state, but flip back
+        # # check if the car is out of bounds
+        # if next_state[0] < self.observation_space.low[0] or next_state[0] > self.observation_space.high[0] or next_state[1] < self.observation_space.low[1] or next_state[1] > self.observation_space.high[1]:
+        #     done = False
+        #     reward = dreward
+        #     info = {'is_legal':False}
+        #     state[2] = ((next_state[2] - np.pi)) % (2 * np.pi) #np.random.uniform(low=-np.pi, high=np.pi)
+        #     #state = next_state #revert to previous state, but flip back
 
 
 
-            if update_env:
-                self.update_environment(next_state)
-            return next_state, reward, done, info #make it end game, with -1
+        #     if update_env:
+        #         self.update_environment(state)
+        #     return state, reward, done, info #make it end game, with -1
+
+
+                # wrap the car around if it goes out of bounds
+        if next_state[0] < self.observation_space.low[0]:
+            next_state[0] = self.observation_space.high[0]
+        elif next_state[0] > self.observation_space.high[0]:
+            next_state[0] = self.observation_space.low[0]
+
+        if next_state[1] < self.observation_space.low[1]:
+            next_state[1] = self.observation_space.high[1]
+        elif next_state[1] > self.observation_space.high[1]:
+            next_state[1] = self.observation_space.low[1]
+
 
 
 
@@ -101,7 +116,7 @@ class DubinsCarEnv(gym.Env):
         dist_obstacle = np.linalg.norm(next_state[:2] - self.obstacle_position) - self.obstacle_radius
         if dist_obstacle < 0:
             done = False
-            reward = -1
+            reward = dreward
             info = {'is_legal':False}
             #state[2] = ((next_state[2] - np.pi)) % (2 * np.pi)#np.random.uniform(low=-np.pi, high=np.pi)
             next_state = state
@@ -113,12 +128,11 @@ class DubinsCarEnv(gym.Env):
 
 
             
-        dist_goal = np.linalg.norm(next_state[:2] - self.goal_position) - self.min_distance_to_goal
         if dist_goal <= 0:
             state = next_state
 
             done = True
-            reward = self.reward 
+            reward = 1
             info ={'is_legal':True}
             if update_env:
                 self.update_environment(next_state)
@@ -128,7 +142,7 @@ class DubinsCarEnv(gym.Env):
 
         else:
             state = next_state
-            reward = 0
+            reward = 0# dreward
             done = False
             info = {'is_legal':True}
             if update_env:
@@ -211,11 +225,39 @@ class DubinsCarEnv(gym.Env):
         theta = np.mod(theta, 2*np.pi)
         return np.array([x,y,theta])
     
-    def encode_helper(self, state):
+    def encode_helper(self, state, norm=True):
         x = state[0]
         y = state[1]
         theta = state[2]
-        return np.array([x,y,np.cos(theta),np.sin(theta)])
+
+
+        if norm:
+            x_norm = (x - self.observation_space.low[0]) / (self.observation_space.high[0] - self.observation_space.low[0])
+            y_norm = (y - self.observation_space.low[1]) / (self.observation_space.high[1] - self.observation_space.low[1])
+
+            # Normalize the coordinates and goal coordinates
+            goal_x_norm = (self.goal_position[0] - self.observation_space.low[0]) / (self.observation_space.high[0] - self.observation_space.low[0])
+            goal_y_norm = (self.goal_position[1] - self.observation_space.low[1]) / (self.observation_space.high[1] - self.observation_space.low[1])
+
+            # Compute the normalized distance to the goal
+            distance_to_goal = np.linalg.norm(np.array([goal_x_norm, goal_y_norm]) - np.array([x_norm, y_norm]))
+
+            # Compute the direction to the goal
+            direction_to_goal = np.arctan2(goal_y_norm - y_norm, goal_x_norm - x_norm)
+
+            # Compute the angle between the agent's orientation and the direction to the goal
+            angle_diff = direction_to_goal - theta
+
+            # Normalize the angle difference to the range [-pi, pi]
+            angle_diff = (angle_diff + np.pi) % (2 * np.pi) - np.pi
+
+            # Compute the cosine of the angle difference
+            facing_goal = np.cos(angle_diff)
+
+            return np.array([x_norm, y_norm, np.cos(theta), np.sin(theta), distance_to_goal, facing_goal])
+
+        else:
+            return np.array([x,y,np.cos(theta),np.sin(theta)])
         
 
 
@@ -227,9 +269,18 @@ class DubinsCarEnv(gym.Env):
         """
         Reset the environment and return the initial state
         """
-        self.state = self.observation_space.sample()
+        illegal = True
         self.goal_position = self.goal_position
         self.obstacle_position = self.obstacle_position
+
+        while illegal:
+            self.state = self.observation_space.sample()
+            dist_obstacle = np.linalg.norm(self.state[:2] - self.obstacle_position) - self.obstacle_radius
+            dist_goal = np.linalg.norm(self.state[:2] - self.goal_position) - self.min_distance_to_goal
+
+            if dist_obstacle > 0 and dist_goal > 0:
+                illegal = False
+
         return self.state
 
     def set(self, x, y,theta):
@@ -240,6 +291,8 @@ class DubinsCarEnv(gym.Env):
 
         self.goal_position = self.goal_position
         self.obstacle_position = self.obstacle_position
+
+ 
         return self.state
         
     def render(self, mode='human', close=False):
@@ -299,7 +352,9 @@ class DubinsCarEnv(gym.Env):
     def make_gif(self):
         import imageio
 
-        imageio.mimsave('animation.gif', self.images, fps=30)
+        imageio.mimsave('animation_pg.gif', self.images, fps=30)
+        self.images = []
+
 
 
 
