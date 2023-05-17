@@ -44,6 +44,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         self.v_max = 0.25 # maximum speed
         self.omega_max = 65 * np.pi/180  # maximum angular velocity (radians)
         self.images = []
+        self.positions = {'attacker': [], 'defender': []}
         
 
     def reset(self):
@@ -281,6 +282,28 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         plt.xlim([-self.size, self.size])
         plt.ylim([-self.size, self.size])
 
+        # self.positions['attacker'].append(np.array(self.state['attacker'][:2].copy()))
+        # self.positions['defender'].append(np.array(self.state['defender'][:2].copy()))
+
+                # Append current positions and orientations to respective lists
+        self.positions['attacker'].append((self.state['attacker'][:2].copy(), self.state['attacker'][2]))
+        self.positions['defender'].append((self.state['defender'][:2].copy(), self.state['defender'][2]))
+
+
+
+        #  # After adding the attacker, defender and goal
+        # for player, positions in self.positions.items():
+        #     color = 'b' if player == 'attacker' else 'r'
+        #     for pos in positions:
+        #         plt.plot(*pos, marker='o', markersize=2, color=color)
+
+# Plot trails for each player
+        for player, pos_orients in self.positions.items():
+            color = 'b' if player == 'attacker' else 'r'
+            for pos, orient in pos_orients:
+                dx = 0.1 * np.cos(orient)
+                dy = 0.1 * np.sin(orient)
+                plt.arrow(*pos, dx, dy, color=color, head_width=0.1, head_length=0.1)
     
 
         attacker = plt.Circle((self.state['attacker'][0], self.state['attacker'][1]), 0.1, color='b', fill=True)
@@ -295,6 +318,8 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         plt.gca().add_artist(defender)
         plt.gca().add_artist(goal)
 
+        
+
         #print('saving')
         # save current figure to images list
         buf = io.BytesIO()
@@ -306,8 +331,12 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
     def make_gif(self, file_name='two_player_animation_pg.gif'):
         import imageio
 
+        end_state = self.images[-1]
         imageio.mimsave(file_name, self.images, fps=30)
         self.images = []
+        self.positions = {'attacker': [], 'defender': []}
+
+        return end_state
 
 
 

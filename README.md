@@ -1,28 +1,30 @@
 # Gym Examples
-Some simple examples of Gym environments and wrappers.
-For some explanations of these examples, see the [Gym documentation](https://gymnasium.farama.org).
+Repo for Convex-Concave 0-Sum Stochastic Stackelberg Games
+
 
 ### Environments
-This repository hosts the examples that are shown [on the environment creation documentation](https://gymnasium.farama.org/tutorials/environment_creation/).
-- `GridWorldEnv`: Simplistic implementation of gridworld environment
+Environments are found in gym_examples/envs/
 
-### Wrappers
-This repository hosts the examples that are shown [on wrapper documentation](https://gymnasium.farama.org/api/wrappers/).
-- `ClipReward`: A `RewardWrapper` that clips immediate rewards to a valid range
-- `DiscreteActions`: An `ActionWrapper` that restricts the action space to a finite subset
-- `RelativePosition`: An `ObservationWrapper` that computes the relative position between an agent and a target
-- `ReacherRewardWrapper`: Allow us to weight the reward terms for the reacher environment
+Dependencies are
+```
+jax
+optax
+dm-haiku
+gym
+pandas
+matplotlib
+seaborn
+numpy
+tensorboard
+imageio
+```
 
-### Contributing
-If you would like to contribute, follow these steps:
-- Fork this repository
-- Clone your fork
-- Set up pre-commit via `pre-commit install`
+Pythoin version 3.9.2
 
-PRs may require accompanying PRs in [the documentation repo](https://github.com/Farama-Foundation/Gymnasium/tree/main/docs).
+## Running the script
+to run 
+cd into `gym_examples/gym_examples/src`
+```
+python run_script.py
+```
 
-## Work
-- Implemented value iteration
-- Got it working with modified frozen lake
-- tried to get Coax working (didn't work, reaised git issue)
-- tried to get cliff-walk working, doesn't currently work with gymnasium
