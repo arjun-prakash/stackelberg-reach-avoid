@@ -53,12 +53,14 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         """
         
         self.state['defender'] = np.array([0, 0., 0.], dtype=self.observation_space['defender'].dtype)
-        
+
+        self.state['attacker'] = np.array([2., 2., 0.], dtype=self.observation_space['defender'].dtype)
+
         illegal = True
         epsilon = 0.25
 
         while illegal:
-            self.state['attacker'] = self.observation_space['attacker'].sample()
+           # self.state['attacker'] = self.observation_space['attacker'].sample()
             #self.state['defender'] = self.observation_space['defender'].sample()
 
             dist_capture = np.linalg.norm(self.state['attacker'][:2] - self.state['defender'][:2]) - self.capture_radius - 1
@@ -146,6 +148,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         dist_capture = np.linalg.norm(next_state['attacker'][:2] - next_state['defender'][:2]) 
 
         #self.reward = np.exp(-dist_goal) - np.exp(-dist_capture)
+        self.reward = np.exp(-dist_goal)
 
       
         
@@ -156,12 +159,12 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                 info = {'player': player, 'is_legal':False, 'status':'cannot move into defender'}
                 done = True
                 next_state = state.copy()
-                reward = -10
+                reward = -1
 
             else: #defender eats attacker
                 info = {'player': player, 'is_legal':True, 'status':'eaten'}
                 done = True
-                reward = -10 # -self.reward
+                reward = -1 # -self.reward
 
 
             if update_env:
@@ -170,7 +173,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             return next_state, reward, done, info
        
         if dist_goal < self.min_distance_to_goal:
-            reward = 10
+            reward = 1
             done = True
             info = {'player': player, 'is_legal':True, 'status':'goal_reached'}
 
@@ -417,7 +420,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         angle_diff_attacker_goal = (angle_diff_attacker_goal + np.pi) % (2 * np.pi) - np.pi
         facing_goal_attacker = np.cos(angle_diff_attacker_goal)
 
-        distance_attacker_defender = np.linalg.norm(np.array([defender_x_norm, defender_y_norm]) - np.array([attacker_x_norm, attacker_y_norm]))
+        #distance_attacker_defender = np.linalg.norm(np.array([defender_x_norm, defender_y_norm]) - np.array([attacker_x_norm, attacker_y_norm]))
         direction_attacker_defender = np.arctan2(defender_y_norm - attacker_y_norm, defender_x_norm - attacker_x_norm)
 
         angle_diff_attacker_defender = direction_attacker_defender - attacker_theta
@@ -427,6 +430,17 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         angle_diff_defender_attacker = direction_attacker_defender - defender_theta + np.pi
         angle_diff_defender_attacker = (angle_diff_defender_attacker + np.pi) % (2 * np.pi) - np.pi
         facing_attacker_defender = np.cos(angle_diff_defender_attacker)
+
+        dx = np.abs(attacker_x_norm - defender_x_norm)
+        dy = np.abs(attacker_y_norm - defender_y_norm)
+        dx_wrap = np.abs(dx - 1.0)
+        dy_wrap = np.abs(dy - 1.0)
+        min_dx = np.minimum(dx, dx_wrap)
+        min_dy = np.minimum(dy, dy_wrap)
+        wrapped_diff = np.array([min_dx, min_dy])
+        distance_attacker_defender = np.linalg.norm(wrapped_diff)
+
+
 
         nn_state = np.array([attacker_x_norm, 
                              attacker_y_norm, 

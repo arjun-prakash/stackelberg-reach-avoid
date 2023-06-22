@@ -33,10 +33,28 @@ def policy_network_nash(observation):
     ])
     return net(observation)
 
+# def policy_network_stackelberg(observation, legal_moves):
+#     net = hk.Sequential([
+#         hk.Linear(64), jax.nn.relu,
+#         hk.Linear(64), jax.nn.relu,
+#         hk.Linear(env.num_actions),
+#         jax.nn.softmax
+
+#     ])
+#     logits = net(observation)
+
+#     masked_logits = jnp.multiply(logits, legal_moves)
+#     probabilities = jax.nn.softmax(masked_logits)
+#     return probabilities
+
+
 def policy_network_stackelberg(observation, legal_moves):
     net = hk.Sequential([
-        hk.Linear(64), jax.nn.relu,
-        hk.Linear(64), jax.nn.relu,
+        hk.Linear(400), jax.nn.relu,
+        hk.Linear(400), jax.nn.relu,
+        hk.Linear(400), jax.nn.relu,
+        hk.Linear(400), jax.nn.relu,
+
         hk.Linear(env.num_actions),
         jax.nn.softmax
 
@@ -46,6 +64,7 @@ def policy_network_stackelberg(observation, legal_moves):
     masked_logits = jnp.multiply(logits, legal_moves)
     probabilities = jax.nn.softmax(masked_logits)
     return probabilities
+
 
 
 
@@ -121,7 +140,7 @@ def get_values(grid, trained_params, policy_net, game_type, num_episodes=2):
         v = []
         for e in range(num_episodes):
             state = env.set(grid[i][0], grid[i][1], grid[i][2])
-            episode_rewards = test_policy(env, trained_params, policy_net, state=state, game_type=game_type, make_gif=False)
+            episode_rewards = test_policy(env, trained_params, policy_net, state=state, game_type=game_type, make_gif=False) #probably need to append [reward] to the beginning
             returns = calculate_returns(episode_rewards)
             v.append(returns[0])
 
@@ -168,7 +187,7 @@ def get_q_values(grid, trained_params, policy_net, game_type, num_episodes=2):
 
 
 def calculate_bellman_error(grid, trained_params, policy_net, game_type, num_episodes=10):
-    return np.max(get_values(grid, trained_params, policy_net, game_type ,num_episodes) - get_q_values(grid, trained_params, policy_net, game_type,num_episodes))
+    return np.linalg.norm(get_values(grid, trained_params, policy_net, game_type ,num_episodes) - get_q_values(grid, trained_params, policy_net, game_type,num_episodes))
 
 
 def make_grid():
@@ -726,7 +745,7 @@ if __name__ == "__main__":
 
     game_type = 'stackelberg'
     
-    timestamp = 'loaded_88_'+str(datetime.datetime.now())
+    timestamp = str(datetime.datetime.now())
     env = TwoPlayerDubinsCarEnv()
     print(game_type,' starting experiment at :', timestamp)
 
@@ -744,10 +763,10 @@ if __name__ == "__main__":
 
     import pickle
     # Load data (deserialize)
-    with open('data/stackelberg/2023-05-11 13:09:02.276650_episode_88_params.pickle', 'rb') as handle:
-        loaded_params = pickle.load(handle)
+    # with open('data/stackelberg/2023-05-11 13:09:02.276650_episode_88_params.pickle', 'rb') as handle:
+    #     loaded_params = pickle.load(handle)
 
-    writer = SummaryWriter(f'runs/{game_type}_script_loaded_88_' + timestamp)
+    writer = SummaryWriter(f'runs/{game_type}' + timestamp)
 
     if game_type == 'stackelberg':
         trained_params = reinforce_stackelberg(env, 
@@ -760,7 +779,7 @@ if __name__ == "__main__":
                                             epsilon_end=epsilon_decay, 
                                             epsilon_decay=epsilon_decay, 
                                             bellman_num_episodes=bellman_num_episodes, 
-                                            timestamp=timestamp, loaded_params=loaded_params)
+                                            timestamp=timestamp, loaded_params=None)
     elif game_type == 'nash':
         trained_params = reinforce_nash(env, 
                                         num_episodes=num_episodes, 
