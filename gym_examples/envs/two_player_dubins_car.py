@@ -6,6 +6,8 @@ import numpy as np
 import jax
 import copy
 import jax.numpy as jnp
+import haiku as hk
+import optax
 
 
 from envs.dubins_car import DubinsCarEnv
@@ -489,3 +491,58 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             _, _, _, info = self.step(state, action,player, update_env=False)
             legal_actions_mask.append(int(info['is_legal']))
         return jnp.array(legal_actions_mask)
+
+
+    def select_action_sr(self, nn_state, params, policy_net, key, epsilon):
+                if jax.random.uniform(key) < epsilon:
+                    return jax.random.choice(key, self.num_actions)
+                else:
+                    probs = policy_net.apply(params, nn_state)
+                    return jax.random.categorical(key, probs)
+
+        
+    def single_rollout(self,args):
+        params, policy_net, key, epsilon, gamma = args
+        state = self.reset()
+        nn_state = self.encode_helper(state)
+
+        states = {player: [] for player in self.players}
+        actions = {player: [] for player in self.players}
+        rewards = {player: [] for player in self.players}
+        wins = {'attacker': 0, 'defender': 0, 'draw': 0}
+        done = False
+        step = 0
+        while not done and step < 200:
+            for player in self.players:
+                key, subkey = jax.random.split(key)
+
+                #action = jax.random.choice(subkey, self.num_actions)
+                action = self.select_action_sr(nn_state, params[player], policy_net,  key, epsilon)
+                state, reward, done, info = self.step(state=state, action=action, player=player, update_env=True)
+                nn_state = self.encode_helper(state)
+                states[player].append(nn_state)
+                actions[player].append(action)
+                rewards[player].append(reward)
+                if done:
+                    if info['is_legal']:
+                        wins[player] += 1
+                    elif not info['is_legal']:
+                        wins['defender' if player == 'attacker' else 'attacker'] += 1
+                    break
+            step += 1
+
+        returns = {player: [] for player in self.players}
+
+        for player in self.players:
+            G = 0
+            for r in reversed(rewards['attacker']):
+                G = r + gamma * G
+                returns[player].append(G)
+            
+            returns[player] = np.array(list(reversed(returns[player])))
+            states[player] = np.array(states[player])
+            actions[player] = np.array(actions[player])
+
+        
+
+        return states, actions, returns, wins
