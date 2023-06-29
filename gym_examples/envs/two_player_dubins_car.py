@@ -500,36 +500,86 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                     probs = policy_net.apply(params, nn_state)
                     return jax.random.categorical(key, probs)
 
+
+    def pad_and_mask(self, states, actions, returns, max_length=100):
+        # Convert to numpy arrays
+        states = np.array(states)
+        actions = np.array(actions)
+        returns = np.array(returns)
+
+        # Pad the states, actions, and returns
+        padded_states = np.pad(states, ((0, max_length - len(states)), (0, 0)), 'constant', constant_values=0)
+        padded_actions = np.pad(actions, (0, max_length - len(actions)), 'constant', constant_values=0)
+        padded_returns = np.pad(returns, (0, max_length - len(returns)), 'constant', constant_values=0)
+
+        # Create a mask where the value is 1 for actual values and 0 for padding
+        mask = np.concatenate([np.ones(len(states)), np.zeros(max_length - len(states))])
+
+        return padded_states, padded_actions, padded_returns, mask
+
+
+
+
+
+
         
     def single_rollout(self,args):
-        params, policy_net, key, epsilon, gamma = args
+        params, policy_net, key, epsilon, gamma, render = args
         state = self.reset()
         nn_state = self.encode_helper(state)
 
         states = {player: [] for player in self.players}
         actions = {player: [] for player in self.players}
         rewards = {player: [] for player in self.players}
+        mask = {player: [] for player in self.players}
         wins = {'attacker': 0, 'defender': 0, 'draw': 0}
         done = False
         step = 0
-        while not done and step < 200:
+        defender_wins = False
+        attacker_wins = False
+
+        while not done and not defender_wins and not attacker_wins and step < 100:
             for player in self.players:
+                states[player].append(nn_state)
+
                 key, subkey = jax.random.split(key)
 
                 #action = jax.random.choice(subkey, self.num_actions)
-                action = self.select_action_sr(nn_state, params[player], policy_net,  key, epsilon)
+
+                if player == 'defender':
+                    action = self.select_action_sr(nn_state, params[player], policy_net,  subkey, epsilon)
+                else: 
+                    action = 0
+
                 state, reward, done, info = self.step(state=state, action=action, player=player, update_env=True)
                 nn_state = self.encode_helper(state)
-                states[player].append(nn_state)
                 actions[player].append(action)
                 rewards[player].append(reward)
-                if done:
-                    if info['is_legal']:
-                        wins[player] += 1
-                    elif not info['is_legal']:
-                        wins['defender' if player == 'attacker' else 'attacker'] += 1
+
+                if done and player == 'defender': #only attacker can end the game, iterate one more time
+                    defender_wins = True
+                    wins['defender'] += 1
+
+                if (defender_wins and player == 'attacker'): #overwrite the attacker's last reward
+                    rewards['attacker'][-1] = -1
+                    done = True
                     break
+
+                if (done and player == 'attacker'): #break if attacker wins, game is over
+                    if info['is_legal']:
+                        attacker_wins = True
+                        wins['attacker'] += 1
+                    elif not info['is_legal']:
+                        defender_wins = True
+                        wins['defender'] += 1
+                    break
+                if render:
+                    self.render()
+
+
+
             step += 1
+            #print(step)
 
         returns = {player: [] for player in self.players}
 
@@ -539,10 +589,12 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                 G = r + gamma * G
                 returns[player].append(G)
             
-            returns[player] = np.array(list(reversed(returns[player])))
-            states[player] = np.array(states[player])
-            actions[player] = np.array(actions[player])
+            returns[player] = list(reversed(returns[player]))
+
+       
+        for player in self.players:
+            states[player], actions[player], returns[player], mask[player] = self.pad_and_mask(states[player], actions[player], returns[player])
 
         
 
-        return states, actions, returns, wins
+        return states, actions, returns, mask, wins
