@@ -524,9 +524,9 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         
     def single_rollout(self,args):
-        params, policy_net, key, epsilon, gamma, render = args
-        state = self.reset()
-        nn_state = self.encode_helper(state)
+        params, policy_net, key, epsilon, gamma, render, for_q_value = args
+
+        
 
         states = {player: [] for player in self.players}
         actions = {player: [] for player in self.players}
@@ -538,6 +538,17 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         defender_wins = False
         attacker_wins = False
 
+        if not for_q_value:
+            state = self.reset()
+        else:
+            state = self.state
+            #append 0 to rewards
+            rewards['attacker'].append(0)
+            rewards['defender'].append(0)
+
+        nn_state = self.encode_helper(state)
+
+
         while not done and not defender_wins and not attacker_wins and step < 100:
             for player in self.players:
                 states[player].append(nn_state)
@@ -546,10 +557,8 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
                 #action = jax.random.choice(subkey, self.num_actions)
 
-                if player == 'defender':
-                    action = self.select_action_sr(nn_state, params[player], policy_net,  subkey, epsilon)
-                else: 
-                    action = 0
+                action = self.select_action_sr(nn_state, params[player], policy_net,  subkey, epsilon)
+                
 
                 state, reward, done, info = self.step(state=state, action=action, player=player, update_env=True)
                 nn_state = self.encode_helper(state)
@@ -591,10 +600,10 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             
             returns[player] = list(reversed(returns[player]))
 
-       
-        for player in self.players:
-            states[player], actions[player], returns[player], mask[player] = self.pad_and_mask(states[player], actions[player], returns[player])
-
+        if not for_q_value:
+            for player in self.players:
+                states[player], actions[player], returns[player], mask[player] = self.pad_and_mask(states[player], actions[player], returns[player])
+    
         
 
         return states, actions, returns, mask, wins
