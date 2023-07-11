@@ -26,6 +26,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         self.size = 4
         self.reward = 1
+        self.max_steps = 50
 
         self.observation_space= {'attacker':spaces.Box(low=np.array([-self.size, -self.size, 0]), high=np.array([self.size,self.size , 2*np.pi]), dtype=np.float32), 
                                 'defender':spaces.Box(low=np.array([-self.size, -self.size, 0]), high=np.array([self.size, self.size, 2*np.pi]), dtype=np.float32)}
@@ -133,15 +134,34 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
 
 
-        if next_state[player][0] < self.observation_space[player].low[0]:
-            next_state[player][0] = self.observation_space[player].high[0]
-        elif next_state[player][0] > self.observation_space[player].high[0]:
-            next_state[player][0] = self.observation_space[player].low[0]
+        # if next_state[player][0] < self.observation_space[player].low[0]:
+        #     next_state[player][0] = self.observation_space[player].high[0]
+        # elif next_state[player][0] > self.observation_space[player].high[0]:
+        #     next_state[player][0] = self.observation_space[player].low[0]
 
-        if next_state[player][1] < self.observation_space[player].low[1]:
-            next_state[player][1] = self.observation_space[player].high[1]
-        elif next_state[player][1] > self.observation_space[player].high[1]:
-            next_state[player][1] = self.observation_space[player].low[1]
+        # if next_state[player][1] < self.observation_space[player].low[1]:
+        #     next_state[player][1] = self.observation_space[player].high[1]
+        # elif next_state[player][1] > self.observation_space[player].high[1]:
+        #     next_state[player][1] = self.observation_space[player].low[1]
+
+
+        out_of_bounds = False
+
+        if next_state[player][0] < self.observation_space[player].low[0] or next_state[player][0] > self.observation_space[player].high[0]:
+            out_of_bounds = True
+
+        if next_state[player][1] < self.observation_space[player].low[1] or next_state[player][1] > self.observation_space[player].high[1]:
+            out_of_bounds = True
+
+        if out_of_bounds:
+            reward = -1
+            done = True
+            info = {'player': player, 'is_legal':False, 'status':'out_of_bounds'}
+
+            if update_env:
+                self.state = next_state
+
+            return next_state, reward, done, info
 
 
         
@@ -151,6 +171,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         #self.reward = np.exp(-dist_goal) - np.exp(-dist_capture)
         self.reward = np.exp(-dist_goal)
+
 
       
         
@@ -501,19 +522,19 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                     return jax.random.categorical(key, probs)
 
 
-    def pad_and_mask(self, states, actions, returns, max_length=100):
+    def pad_and_mask(self, states, actions, returns):
         # Convert to numpy arrays
         states = np.array(states)
         actions = np.array(actions)
         returns = np.array(returns)
 
         # Pad the states, actions, and returns
-        padded_states = np.pad(states, ((0, max_length - len(states)), (0, 0)), 'constant', constant_values=0)
-        padded_actions = np.pad(actions, (0, max_length - len(actions)), 'constant', constant_values=0)
-        padded_returns = np.pad(returns, (0, max_length - len(returns)), 'constant', constant_values=0)
+        padded_states = np.pad(states, ((0, self.max_steps - len(states)), (0, 0)), 'constant', constant_values=0)
+        padded_actions = np.pad(actions, (0, self.max_steps  - len(actions)), 'constant', constant_values=0)
+        padded_returns = np.pad(returns, (0, self.max_steps  - len(returns)), 'constant', constant_values=0)
 
         # Create a mask where the value is 1 for actual values and 0 for padding
-        mask = np.concatenate([np.ones(len(states)), np.zeros(max_length - len(states))])
+        mask = np.concatenate([np.ones(len(states)), np.zeros(self.max_steps  - len(states))])
 
         return padded_states, padded_actions, padded_returns, mask
 
@@ -537,26 +558,30 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         step = 0
         defender_wins = False
         attacker_wins = False
+        defender_oob = False
 
-        if not for_q_value:
-            state = self.reset()
-        else:
-            state = self.state
+
+        state = self.state
+        #state = self.reset()
+
+        if for_q_value:
             #append 0 to rewards
             rewards['attacker'].append(0)
             rewards['defender'].append(0)
-
+        # else: 
+        #     state = self.reset()
+            
         nn_state = self.encode_helper(state)
 
 
-        while not done and not defender_wins and not attacker_wins and step < 100:
+        while not done and not defender_wins and not attacker_wins and step < self.max_steps:
             for player in self.players:
                 states[player].append(nn_state)
 
                 key, subkey = jax.random.split(key)
 
                 #action = jax.random.choice(subkey, self.num_actions)
-
+                
                 action = self.select_action_sr(nn_state, params[player], policy_net,  subkey, epsilon)
                 
 
@@ -565,13 +590,22 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                 actions[player].append(action)
                 rewards[player].append(reward)
 
-                if done and player == 'defender': #only attacker can end the game, iterate one more time
+                if done and player == 'defender' and info['is_legal'] == True: #only attacker can end the game, iterate one more time
                     defender_wins = True
                     wins['defender'] += 1
 
                 if (defender_wins and player == 'attacker'): #overwrite the attacker's last reward
                     rewards['attacker'][-1] = -1
                     done = True
+                    break
+
+                if done and player == 'defender' and info['is_legal'] == False: #only attacker can end the game, iterate one more time
+                    defender_oob = True
+
+                if (defender_oob and player == 'attacker'): #overwrite the attacker's last reward
+                    rewards['attacker'][-1] = 1
+                    done = True
+                    wins['attacker'] += 1
                     break
 
                 if (done and player == 'attacker'): #break if attacker wins, game is over
