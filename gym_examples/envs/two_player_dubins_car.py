@@ -21,7 +21,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         self.game_type = game_type
 
         self.players = ['defender', 'attacker']
-        self.num_actions = 3
+        self.num_actions = 4
         self.action_space = {'attacker':spaces.Discrete(self.num_actions), 'defender':spaces.Discrete(self.num_actions)}
 
         self.size = 4
@@ -505,6 +505,14 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             'defender': np.array([defender_x, defender_y, defender_theta])
         }
         return env_state
+
+
+    def unconstrained_select_action(self, nn_state, params, policy_net, key, epsilon):
+        if jax.random.uniform(key) < epsilon:
+            return jax.random.choice(key, self.num_actions)
+        else:
+            probs = policy_net.apply(params, nn_state)
+            return jax.random.categorical(key, probs)
     
     def get_legal_actions_mask(self, state, player):
         legal_actions_mask = []
@@ -513,30 +521,39 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             legal_actions_mask.append(int(info['is_legal']))
         return jnp.array(legal_actions_mask)
 
+    def constrained_select_action(self, nn_state, policy_net, params, legal_actions_mask, key, epsilon):
+        if jax.random.uniform(key) < epsilon:
+            legal_actions_indices = jnp.arange(len(legal_actions_mask))[legal_actions_mask.astype(bool)]
+            return jax.random.choice(key, legal_actions_indices)
+        else:
+            probs = policy_net.apply(params, nn_state, legal_actions_mask)
+            return jax.random.categorical(key, probs)
 
-    def select_action_sr(self, nn_state, params, policy_net, key, epsilon):
-                if jax.random.uniform(key) < epsilon:
-                    return jax.random.choice(key, self.num_actions)
-                else:
-                    probs = policy_net.apply(params, nn_state)
-                    return jax.random.categorical(key, probs)
 
 
-    def pad_and_mask(self, states, actions, returns):
+
+
+
+    
+
+
+    def pad_and_mask(self, states, actions, action_masks, returns):
         # Convert to numpy arrays
         states = np.array(states)
         actions = np.array(actions)
+        action_masks = np.array(action_masks)
         returns = np.array(returns)
 
         # Pad the states, actions, and returns
         padded_states = np.pad(states, ((0, self.max_steps - len(states)), (0, 0)), 'constant', constant_values=0)
         padded_actions = np.pad(actions, (0, self.max_steps  - len(actions)), 'constant', constant_values=0)
+        padded_action_masks = np.pad(action_masks, ((0, self.max_steps  - len(action_masks)), (0,0)), 'constant', constant_values=0)
         padded_returns = np.pad(returns, (0, self.max_steps  - len(returns)), 'constant', constant_values=0)
 
         # Create a mask where the value is 1 for actual values and 0 for padding
-        mask = np.concatenate([np.ones(len(states)), np.zeros(self.max_steps  - len(states))])
+        padding_mask = np.concatenate([np.ones(len(states)), np.zeros(self.max_steps  - len(states))])
 
-        return padded_states, padded_actions, padded_returns, mask
+        return padded_states, padded_actions, padded_action_masks, padded_returns, padding_mask
 
 
 
@@ -547,12 +564,14 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
     def single_rollout(self,args):
         params, policy_net, key, epsilon, gamma, render, for_q_value = args
 
-        
+        game_type = 'stackelberg'
 
         states = {player: [] for player in self.players}
         actions = {player: [] for player in self.players}
+        action_masks = {player: [] for player in self.players}
         rewards = {player: [] for player in self.players}
-        mask = {player: [] for player in self.players}
+        padding_mask = {player: [] for player in self.players}
+
         wins = {'attacker': 0, 'defender': 0, 'draw': 0}
         done = False
         step = 0
@@ -580,9 +599,16 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
                 key, subkey = jax.random.split(key)
 
-                #action = jax.random.choice(subkey, self.num_actions)
-                
-                action = self.select_action_sr(nn_state, params[player], policy_net,  subkey, epsilon)
+
+                if game_type == 'nash':
+                    action = self.unconstrained_select_action(nn_state, params[player], policy_net,  subkey, epsilon)
+
+                elif game_type == 'stackelberg':
+                    legal_actions_mask = self.get_legal_actions_mask(state, player)
+                    action = self.constrained_select_action(nn_state, policy_net, params[player], legal_actions_mask, subkey, epsilon)
+                    action_masks[player].append(legal_actions_mask)
+
+
                 
 
                 state, reward, done, info = self.step(state=state, action=action, player=player, update_env=True)
@@ -636,8 +662,8 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         if not for_q_value:
             for player in self.players:
-                states[player], actions[player], returns[player], mask[player] = self.pad_and_mask(states[player], actions[player], returns[player])
+                states[player], actions[player], action_masks[player], returns[player], padding_mask[player] = self.pad_and_mask(states[player], actions[player], action_masks[player], returns[player])
     
         
 
-        return states, actions, returns, mask, wins
+        return states, actions, action_masks, returns, padding_mask, wins
