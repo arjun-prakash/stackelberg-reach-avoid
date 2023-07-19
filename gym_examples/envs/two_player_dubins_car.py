@@ -21,7 +21,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         self.game_type = game_type
 
         self.players = ['defender', 'attacker']
-        self.num_actions = 4
+        self.num_actions = 3
         self.action_space = {'attacker':spaces.Discrete(self.num_actions), 'defender':spaces.Discrete(self.num_actions)}
 
         self.size = 4
@@ -564,9 +564,8 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         
     def single_rollout(self,args):
-        params, policy_net, key, epsilon, gamma, render, for_q_value = args
+        game_type, params, policy_net, key, epsilon, gamma, render, for_q_value = args
 
-        game_type = 'stackelberg'
 
         states = {player: [] for player in self.players}
         actions = {player: [] for player in self.players}
@@ -603,10 +602,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
 
                 if game_type == 'nash':
-                    if player == 'defender':
-                        action = 0
-                    else:
-                        action = self.unconstrained_select_action(nn_state, params[player], policy_net,  subkey, epsilon)
+                    action = self.unconstrained_select_action(nn_state, params[player], policy_net,  subkey, epsilon)
                     state, reward, done, info = self.step(state=state, action=action, player=player, update_env=True)
                     nn_state = self.encode_helper(state)
                     actions[player].append(action)
