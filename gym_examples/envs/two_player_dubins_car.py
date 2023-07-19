@@ -117,6 +117,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             state = self.state.copy()
         else:
             next_state = copy.deepcopy(state)  # save deep copy of the state
+            
 
         #update the state
 
@@ -147,10 +148,10 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         out_of_bounds = False
 
-        if next_state[player][0] < self.observation_space[player].low[0] or next_state[player][0] > self.observation_space[player].high[0]:
+        if next_state[player][0] <= self.observation_space[player].low[0] or next_state[player][0] >= self.observation_space[player].high[0]:
             out_of_bounds = True
 
-        if next_state[player][1] < self.observation_space[player].low[1] or next_state[player][1] > self.observation_space[player].high[1]:
+        if next_state[player][1] <= self.observation_space[player].low[1] or next_state[player][1] >= self.observation_space[player].high[1]:
             out_of_bounds = True
 
         if out_of_bounds:
@@ -527,7 +528,8 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             return jax.random.choice(key, legal_actions_indices)
         else:
             probs = policy_net.apply(params, nn_state, legal_actions_mask)
-            return jax.random.categorical(key, probs)
+            action = jax.random.categorical(key, probs)
+            return action
 
 
 
@@ -601,20 +603,39 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
 
                 if game_type == 'nash':
-                    action = self.unconstrained_select_action(nn_state, params[player], policy_net,  subkey, epsilon)
+                    if player == 'defender':
+                        action = 0
+                    else:
+                        action = self.unconstrained_select_action(nn_state, params[player], policy_net,  subkey, epsilon)
+                    state, reward, done, info = self.step(state=state, action=action, player=player, update_env=True)
+                    nn_state = self.encode_helper(state)
+                    actions[player].append(action)
+                    rewards[player].append(reward)
+                    action_masks[player].append([1]*self.num_actions)
+
 
                 elif game_type == 'stackelberg':
                     legal_actions_mask = self.get_legal_actions_mask(state, player)
-                    action = self.constrained_select_action(nn_state, policy_net, params[player], legal_actions_mask, subkey, epsilon)
-                    action_masks[player].append(legal_actions_mask)
+                    if sum(legal_actions_mask) != 0:
+                        action = self.constrained_select_action(nn_state, policy_net, params[player], legal_actions_mask, subkey, epsilon)
+                        action_masks[player].append(legal_actions_mask)
+                        state, reward, done, info = self.step(state=state, action=action, player=player, update_env=True)
+                        nn_state = self.encode_helper(state)
+                        actions[player].append(action)
+                        rewards[player].append(reward)
+                    else:
+                        done = True
+                        if player == 'defender': 
+                            attacker_wins = True
+                        elif player == 'attacker': 
+                            defender_wins = True
+                            
+
 
 
                 
 
-                state, reward, done, info = self.step(state=state, action=action, player=player, update_env=True)
-                nn_state = self.encode_helper(state)
-                actions[player].append(action)
-                rewards[player].append(reward)
+                
 
                 if done and player == 'defender' and info['is_legal'] == True: #only attacker can end the game, iterate one more time
                     defender_wins = True
