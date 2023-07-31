@@ -4,7 +4,6 @@ import sys
 from collections import Counter
 from pprint import pprint
 
-import imageio
 from pathos.pools import ProcessPool
 from PIL import Image
 from tqdm import tqdm
@@ -215,7 +214,7 @@ def parallel_nash_reinforce(
 
     def save_params(episode_num, params, game_type, timestamp):
         with open(
-            f"data/{game_type}/{timestamp}_episode_{episode_num}_params.pickle", "wb"
+            f"data/experiment_{game_type}/{timestamp}_episode_{episode_num}_params.pickle", "wb"
         ) as handle:
             pickle.dump(params, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
@@ -253,7 +252,7 @@ def parallel_nash_reinforce(
 
     # Define the optimizer
     agent_optimizer = optax.chain(
-        optax.clip(1.0), optax.adam(learning_rate=learning_rate)
+        optax.clip(1.0), optax.radam(learning_rate=learning_rate)
     )
     optimizer = {player: agent_optimizer for player in env.players}
     opt_state = {
@@ -334,12 +333,12 @@ def parallel_nash_reinforce(
                     False,
                 ]
             )
-            env.make_gif(f"gifs/nash/pdebug_{episode}.gif")
+            env.make_gif(f"gifs/experiment_nash/{timestamp}_{episode}.gif")
             save_params(episode, params, "nash", timestamp)
 
-            # bellman_error = calc_bellman_error(env, params, policy_net, 16, jax.random.PRNGKey(episode), epsilon, gamma)
-            # print('bellman_error', bellman_error)
-            # writer.add_scalar('bellman_error', bellman_error, episode)
+            bellman_error = calc_bellman_error(env, params, policy_net, 16, jax.random.PRNGKey(episode), epsilon, gamma)
+            print('bellman_error', bellman_error)
+            writer.add_scalar('bellman_error', bellman_error, episode)
 
         if (episode + 1) % batch_multiple == 0 and valid:
             for player in env.players:
@@ -600,7 +599,7 @@ def parallel_stackelberg_reinforce(
 
     def save_params(episode_num, params, game_type, timestamp):
         with open(
-            f"data/{game_type}/{timestamp}_episode_{episode_num}_params.pickle", "wb"
+            f"data/experiment_{game_type}/{timestamp}_episode_{episode_num}_params.pickle", "wb"
         ) as handle:
             pickle.dump(params, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
@@ -652,7 +651,7 @@ def parallel_stackelberg_reinforce(
 
     # Define the optimizer
     agent_optimizer = optax.chain(
-        optax.clip(1.0), optax.adam(learning_rate=learning_rate)
+        optax.clip(1.0), optax.radam(learning_rate=learning_rate)
     )
     optimizer = {player: agent_optimizer for player in env.players}
     opt_state = {
@@ -668,7 +667,7 @@ def parallel_stackelberg_reinforce(
     batch_masks = {player: [] for player in env.players}
     traj_length = []
     epsilon = epsilon_start
-    training_player = env.players[0]  # start with the first player (the defender)
+    training_player = 'attacker'  # start with the first player (the defender)
     defender_norm = [0]
     attacker_norm = [0]
     defender_grad_norm = [0]
@@ -739,12 +738,12 @@ def parallel_stackelberg_reinforce(
                     False,
                 ]
             )
-            env.make_gif(f"gifs/stackelberg/pdebug_{episode}.gif")
+            env.make_gif(f"gifs/experiment_stackelberg/{timestamp}_{episode}.gif")
             save_params(episode, params, "stackelberg", timestamp)
 
-            # bellman_error = calc_bellman_error(env, params, policy_net, 16, jax.random.PRNGKey(episode), epsilon, gamma)
-            # print('bellman_error', bellman_error)
-            # writer.add_scalar('bellman_error', bellman_error, episode)
+            bellman_error = calc_bellman_error(env, params, policy_net, 16, jax.random.PRNGKey(episode), epsilon, gamma)
+            print('bellman_error', bellman_error)
+            writer.add_scalar('bellman_error', bellman_error, episode)
             training_player = env.players[
                 (env.players.index(training_player) + 1) % len(env.players)
             ]  # switch trining plauyer
@@ -817,13 +816,13 @@ def parallel_stackelberg_reinforce(
 
 
 if __name__ == "__main__":
-    game_type = "stackelberg"
+    game_type = "nash"
 
     timestamp = str(datetime.datetime.now())
     env = TwoPlayerDubinsCarEnv()
     print(game_type, " starting experiment at :", timestamp)
 
-    writer = SummaryWriter(f"runs/{game_type}" + timestamp)
+    writer = SummaryWriter(f"runs/experiment_{game_type}" + timestamp)
 
     # Hyperparameters
     learning_rate = 1e-3  # 1e-3
@@ -835,11 +834,11 @@ if __name__ == "__main__":
     # Training parameters
     num_parallel = 16
     batch_multiple = 1  # the batch size will be num_parallel * batch_multiple
-    num_episodes = 2000
-    eval_interval = 128
+    num_episodes = 6000
+    eval_interval = 256
     loaded_params = None
 
-    if game_type == "nash:":
+    if game_type == "nash":
         trained_params = parallel_nash_reinforce(
             env,
             num_episodes=num_episodes,
