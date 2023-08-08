@@ -358,7 +358,8 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         import imageio
 
         end_state = self.images[-1]
-        imageio.mimsave(file_name, self.images, fps=30)
+        ms = 1000/30
+        imageio.mimsave(file_name, self.images, ms=ms)
         self.images = []
         self.positions = {'attacker': [], 'defender': []}
 
@@ -578,6 +579,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         defender_wins = False
         attacker_wins = False
         defender_oob = False
+        info = {'winner': 'draw'}
 
 
         state = self.state
@@ -622,8 +624,10 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                         done = True
                         if player == 'defender': 
                             attacker_wins = True
+                            info['winner'] = 'attacker'
                         elif player == 'attacker': 
                             defender_wins = True
+                            info['winner'] = 'defender'
                             
 
 
@@ -635,6 +639,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                 if done and player == 'defender' and info['is_legal'] == True: #only attacker can end the game, iterate one more time
                     defender_wins = True
                     wins['defender'] += 1
+                    info['winner'] = 'defender'
 
                 if (defender_wins and player == 'attacker'): #overwrite the attacker's last reward
                     rewards['attacker'][-1] = -1
@@ -648,15 +653,18 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                     rewards['attacker'][-1] = 1
                     done = True
                     wins['attacker'] += 1
+                    info['winner'] = 'attacker'
                     break
 
                 if (done and player == 'attacker'): #break if attacker wins, game is over
                     if info['is_legal']:
                         attacker_wins = True
                         wins['attacker'] += 1
+                        info['winner'] = 'attacker'
                     elif not info['is_legal']:
                         defender_wins = True
                         wins['defender'] += 1
+                        info['winner'] = 'defender'
                     break
                 if render:
                     self.render()

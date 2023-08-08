@@ -32,11 +32,11 @@ def policy_network(observation):
     return net(observation)
 
 policy_net = hk.without_apply_rng(hk.transform(policy_network))
-key = jax.random.PRNGKey(42)
+key = jax.random.PRNGKey(1)
 epsilon = 0.1
 
 #Load data (deserialize)
-with open('data/drone/test.pickle', 'rb') as handle:
+with open('data/drone/nash_2023-08-07 12_01_43.203205_episode_49664_params.pickle', 'rb') as handle:
      loaded_params = pickle.load(handle)
 
 env = TwoPlayerDubinsCarEnv()
@@ -60,8 +60,8 @@ def main():
 
     timeHelper.sleep(3.5)
 
-    initial_position_d = (state['defender'][0], state['defender'][1], 1.)
-    initial_position_a = (state['attacker'][0], state['attacker'][1], 1.)
+    initial_position_d = (state['defender'][0]/2, state['defender'][1]/2, 1.)
+    initial_position_a = (state['attacker'][0]/2, state['attacker'][1]/2, 1.)
 
     defender_cf.goTo(initial_position_d, 0, 3.5)
     attacker_cf.goTo(initial_position_a, 0, 3.5)
@@ -69,18 +69,28 @@ def main():
     attacker_cf.setLEDColor(255, 0, 0)
     defender_cf.setLEDColor(0, 255, 0)
     
-    timesteps = np.arange(0, 10, 0.1)
+    timesteps = np.arange(0, 30, 0.1)
     for t in timesteps:
         if t % 0.5 == 0:
             prev_state = copy.deepcopy(state) 
             for player in env.players:
                 key, subkey = jax.random.split(key)
                 nn_state = env.encode_helper(state)
-                action = env.select_action_sr(nn_state, loaded_params[player], policy_net,  subkey, epsilon)
+                action = env.unconstrained_select_action(nn_state, loaded_params[player], policy_net,  key, epsilon)
                 state, reward, done, info = env.step(state=state, action=action, player=player, update_env=True)
+                env.render()
                 print('prev_state', prev_state)
                 print('state:', state)
                 print('action:', action)
+
+        if done: 
+            if info['status'] == 'goal_reached':
+                attacker_cf.setLEDColor(255, 0, 255)
+                defender_cf.setLEDColor(255, 0, 255)
+            elif info['status'] == 'eaten':
+                attacker_cf.setLEDColor(0, 255, 255)
+                defender_cf.setLEDColor(0, 255, 255)
+            break
 
 
         attacker_prev_state = prev_state['attacker']
@@ -93,17 +103,17 @@ def main():
         attacker_pos = lamb * attacker_state + (1 - lamb) * attacker_prev_state  
         defender_pos = lamb * defender_state + (1 - lamb) * defender_prev_state
 
-        defender_cf.cmdPosition((defender_pos[0], defender_pos[1], 1.))
-        attacker_cf.cmdPosition((attacker_pos[0], attacker_pos[1], 1.)) 
+        defender_cf.cmdPosition((defender_pos[0]/2, defender_pos[1]/2, 1.))
+        attacker_cf.cmdPosition((attacker_pos[0]/2, attacker_pos[1]/2, 1.)) 
 
 
-        timeHelper.sleepForRate(10)
+        timeHelper.sleepForRate(20)
         # send position to crazyflie
         # wait for 0.1 seconds
     defender_cf.notifySetpointsStop()
     attacker_cf.notifySetpointsStop()
-    attacker_cf.setLEDColor(0, 0, 0)
-    defender_cf.setLEDColor(0, 0, 0)
+    # attacker_cf.setLEDColor(0, 0, 0)
+    # defender_cf.setLEDColor(0, 0, 0)
     pos = np.array(defender_cf.initialPosition) + np.array([0., 0., 1.0])
     defender_cf.goTo(pos, 0, 5.0)
     pos = np.array(attacker_cf.initialPosition) + np.array([0., 0., 1.0])
@@ -115,6 +125,7 @@ def main():
 
     timeHelper.sleep(5.0)
 
+    env.make_gif('gifs/lab/test_real.gif')
     
 
 if __name__ == '__main__':
