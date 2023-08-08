@@ -15,10 +15,9 @@ from envs.dubins_car import DubinsCarEnv
 class TwoPlayerDubinsCarEnv(DubinsCarEnv):
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, game_type='Nash'):
+    def __init__(self):
         super().__init__()
 
-        self.game_type = game_type
 
         self.players = ['defender', 'attacker']
         self.num_actions = 3

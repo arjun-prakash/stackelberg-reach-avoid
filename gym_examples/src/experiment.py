@@ -25,6 +25,7 @@ from envs.two_player_dubins_car import TwoPlayerDubinsCarEnv
 from matplotlib import cm
 from PIL import Image
 from torch.utils.tensorboard import SummaryWriter
+import yaml
 
 
 def parallel_nash_reinforce(
@@ -38,13 +39,14 @@ def parallel_nash_reinforce(
     epsilon_decay,
     num_parallel,
     eval_interval,
+    num_eval_episodes,
     writer,
     timestamp,
     loaded_params,
 ):
     # Define loss function
     # Define loss function
-    # @jax.jit
+    @jax.jit
     def loss_attacker(params, observations, actions, returns, mask):
         action_probabilities = policy_net.apply(params, observations)
         log_probs = jnp.log(
@@ -56,7 +58,7 @@ def parallel_nash_reinforce(
         masked_loss = mask * (-log_probs * jax.lax.stop_gradient(returns))
         return jnp.sum(masked_loss) / jnp.sum(mask)
 
-    # @jax.jit
+    @jax.jit
     def loss_defender(params, observations, actions, returns, mask):
         action_probabilities = policy_net.apply(params, observations)
         log_probs = jnp.log(
@@ -176,9 +178,9 @@ def parallel_nash_reinforce(
         return q
 
     def calc_bellman_error(env, params, policy_net, num_rollouts, key, epsilon, gamma):
-        x_a = np.linspace(-3, 3, 2)
-        y_a = np.linspace(-3, 3, 2)
-        theta_a = np.linspace(0, 2 * np.pi, 2)
+        x_a = np.linspace(2, 2, 1)
+        y_a = np.linspace(2, 2, 1)
+        theta_a = np.linspace(0, 0, 1)
         x_d = np.linspace(0, 0, 1)
         y_d = np.linspace(0, 0, 1)
         theta_d = np.linspace(0, 0, 1)
@@ -200,15 +202,16 @@ def parallel_nash_reinforce(
         for g in tqdm(grid):
             state = env.set(g[0], g[1], g[2], g[3], g[4], g[5])
             v = get_values(
-                env, params, policy_net, 16, jax.random.PRNGKey(42), 0.01, 0.95
+                env, params, policy_net, num_rollouts, jax.random.PRNGKey(42), 0.01, 0.95
             )
             v_vector.append(v)
 
             state = env.set(g[0], g[1], g[2], g[3], g[4], g[5])
             q = get_q_values(
-                env, params, policy_net, 16, jax.random.PRNGKey(42), 0.01, 0.95
+                env, params, policy_net, num_rollouts, jax.random.PRNGKey(42), 0.01, 0.95
             )
             q_vector.append(q)
+
 
         return np.linalg.norm(np.array(q_vector) - np.array(v_vector))
 
@@ -336,7 +339,7 @@ def parallel_nash_reinforce(
             env.make_gif(f"gifs/experiment_nash/{timestamp}_{episode}.gif")
             save_params(episode, params, "nash", timestamp)
 
-            bellman_error = calc_bellman_error(env, params, policy_net, 16, jax.random.PRNGKey(episode), epsilon, gamma)
+            bellman_error = calc_bellman_error(env, params, policy_net, num_eval_episodes, jax.random.PRNGKey(episode), epsilon, gamma)
             print('bellman_error', bellman_error)
             writer.add_scalar('bellman_error', bellman_error, episode)
 
@@ -385,7 +388,7 @@ def parallel_nash_reinforce(
             )
 
             all_wins.append(wins)
-            all_traj_lengths.append(np.mean(traj_length))
+            #all_traj_lengths.append(np.mean(traj_length))
             batch_states = {player: [] for player in env.players}
             batch_actions = {player: [] for player in env.players}
             batch_returns = {player: [] for player in env.players}
@@ -408,13 +411,14 @@ def parallel_stackelberg_reinforce(
     epsilon_decay,
     num_parallel,
     eval_interval,
+    num_eval_episodes,
     writer,
     timestamp,
     loaded_params,
 ):
     # Define loss function
     # Define loss function
-    # @jax.jit
+    @jax.jit
     def loss_attacker(
         params, observations, actions, action_masks, returns, padding_mask
     ):
@@ -428,7 +432,7 @@ def parallel_stackelberg_reinforce(
         masked_loss = padding_mask * (-log_probs * jax.lax.stop_gradient(returns))
         return jnp.sum(masked_loss) / jnp.sum(padding_mask)
 
-    # @jax.jit
+    @jax.jit
     def loss_defender(
         params, observations, actions, action_masks, returns, padding_mask
     ):
@@ -561,9 +565,9 @@ def parallel_stackelberg_reinforce(
         return q
 
     def calc_bellman_error(env, params, policy_net, num_rollouts, key, epsilon, gamma):
-        x_a = np.linspace(-3, 3, 2)
-        y_a = np.linspace(-3, 3, 2)
-        theta_a = np.linspace(0, 2 * np.pi, 2)
+        x_a = np.linspace(2, 2, 1)
+        y_a = np.linspace(2, 2, 1)
+        theta_a = np.linspace(0, 0, 1)
         x_d = np.linspace(0, 0, 1)
         y_d = np.linspace(0, 0, 1)
         theta_d = np.linspace(0, 0, 1)
@@ -585,13 +589,13 @@ def parallel_stackelberg_reinforce(
         for g in tqdm(grid):
             state = env.set(g[0], g[1], g[2], g[3], g[4], g[5])
             v = get_values(
-                env, params, policy_net, 16, jax.random.PRNGKey(42), 0.01, 0.95
+                env, params, policy_net, num_rollouts, jax.random.PRNGKey(42), 0.01, 0.95
             )
             v_vector.append(v)
 
             state = env.set(g[0], g[1], g[2], g[3], g[4], g[5])
             q = get_q_values(
-                env, params, policy_net, 16, jax.random.PRNGKey(42), 0.01, 0.95
+                env, params, policy_net, num_rollouts, jax.random.PRNGKey(42), 0.01, 0.95
             )
             q_vector.append(q)
 
@@ -741,7 +745,7 @@ def parallel_stackelberg_reinforce(
             env.make_gif(f"gifs/experiment_stackelberg/{timestamp}_{episode}.gif")
             save_params(episode, params, "stackelberg", timestamp)
 
-            bellman_error = calc_bellman_error(env, params, policy_net, 16, jax.random.PRNGKey(episode), epsilon, gamma)
+            bellman_error = calc_bellman_error(env, params, policy_net, num_eval_episodes, jax.random.PRNGKey(episode), epsilon, gamma)
             print('bellman_error', bellman_error)
             writer.add_scalar('bellman_error', bellman_error, episode)
             training_player = env.players[
@@ -749,6 +753,7 @@ def parallel_stackelberg_reinforce(
             ]  # switch trining plauyer
 
         if (episode + 1) % batch_multiple == 0 and valid:
+            print("training", training_player)
             if training_player == "defender":
                 (
                     params["defender"],
@@ -802,7 +807,7 @@ def parallel_stackelberg_reinforce(
             )
 
             all_wins.append(wins)
-            all_traj_lengths.append(np.mean(traj_length))
+            #all_traj_lengths.append(np.mean(traj_length))
             batch_states = {player: [] for player in env.players}
             batch_actions = {player: [] for player in env.players}
             batch_action_masks = {player: [] for player in env.players}
@@ -815,9 +820,27 @@ def parallel_stackelberg_reinforce(
     return params
 
 
-if __name__ == "__main__":
-    game_type = "nash"
 
+def load_config(file_path):
+    with open(file_path, 'r') as stream:
+        try:
+            return yaml.safe_load(stream)
+        except yaml.YAMLError as exc:
+            print(exc)
+
+def print_config(config):
+    print("Starting experiment with the following configuration:\n")
+    print(yaml.dump(config))
+
+
+
+
+
+if __name__ == "__main__":
+    config = load_config("configs/config.yml")
+    print_config(config)
+    
+    game_type = config['game']['type']
     timestamp = str(datetime.datetime.now())
     env = TwoPlayerDubinsCarEnv()
     print(game_type, " starting experiment at :", timestamp)
@@ -825,18 +848,27 @@ if __name__ == "__main__":
     writer = SummaryWriter(f"runs/experiment_{game_type}" + timestamp)
 
     # Hyperparameters
-    learning_rate = 1e-3  # 1e-3
-    gamma = 0.95
-    epsilon_start = 1.0
-    epsilon_end = 0.01
-    epsilon_decay = 0.99
+    learning_rate = config['hyperparameters']['learning_rate']
+    gamma = config['hyperparameters']['gamma']
+    epsilon_start = config['hyperparameters']['epsilon_start']
+    epsilon_end = config['hyperparameters']['epsilon_end']
+    epsilon_decay = config['hyperparameters']['epsilon_decay']
 
     # Training parameters
-    num_parallel = 16
-    batch_multiple = 1  # the batch size will be num_parallel * batch_multiple
-    num_episodes = 6000
-    eval_interval = 256
-    loaded_params = None
+    num_parallel = mp.cpu_count()
+    print("using", num_parallel, "cores")
+    batch_multiple = config['training']['batch_multiple']  # the batch size will be num_parallel * batch_multiple
+    num_episodes = config['training']['num_episodes']
+    loaded_params = config['training']['loaded_params']
+
+    # Evaluation parameters
+    eval_interval = config['eval']['eval_interval']
+    num_eval_episodes = config['eval']['num_eval_episodes']
+
+
+
+
+
 
     if game_type == "nash":
         trained_params = parallel_nash_reinforce(
@@ -850,6 +882,7 @@ if __name__ == "__main__":
             epsilon_decay=epsilon_decay,
             num_parallel=num_parallel,
             eval_interval=eval_interval,
+            num_eval_episodes=num_eval_episodes,
             writer=writer,
             timestamp=timestamp,
             loaded_params=None,
@@ -866,7 +899,14 @@ if __name__ == "__main__":
             epsilon_decay=epsilon_decay,
             num_parallel=num_parallel,
             eval_interval=eval_interval,
+            num_eval_episodes=num_eval_episodes,
             writer=writer,
             timestamp=timestamp,
             loaded_params=None,
         )
+
+
+#don't have shedule for epsilon decay, just fix it.  upghrade learning rate
+
+# measure the right error, and make sure it goes down. 
+# bayseian persuasion, principle agent 
