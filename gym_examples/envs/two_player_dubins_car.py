@@ -15,10 +15,9 @@ from envs.dubins_car import DubinsCarEnv
 class TwoPlayerDubinsCarEnv(DubinsCarEnv):
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, game_type='Nash'):
+    def __init__(self):
         super().__init__()
 
-        self.game_type = game_type
 
         self.players = ['defender', 'attacker']
         self.num_actions = 3
@@ -26,6 +25,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         self.size = 4
         self.reward = 1
+        self.max_steps = 50
 
         self.observation_space= {'attacker':spaces.Box(low=np.array([-self.size, -self.size, 0]), high=np.array([self.size,self.size , 2*np.pi]), dtype=np.float32), 
                                 'defender':spaces.Box(low=np.array([-self.size, -self.size, 0]), high=np.array([self.size, self.size, 2*np.pi]), dtype=np.float32)}
@@ -116,6 +116,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             state = self.state.copy()
         else:
             next_state = copy.deepcopy(state)  # save deep copy of the state
+            
 
         #update the state
 
@@ -133,15 +134,34 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
 
 
-        if next_state[player][0] < self.observation_space[player].low[0]:
-            next_state[player][0] = self.observation_space[player].high[0]
-        elif next_state[player][0] > self.observation_space[player].high[0]:
-            next_state[player][0] = self.observation_space[player].low[0]
+        # if next_state[player][0] < self.observation_space[player].low[0]:
+        #     next_state[player][0] = self.observation_space[player].high[0]
+        # elif next_state[player][0] > self.observation_space[player].high[0]:
+        #     next_state[player][0] = self.observation_space[player].low[0]
 
-        if next_state[player][1] < self.observation_space[player].low[1]:
-            next_state[player][1] = self.observation_space[player].high[1]
-        elif next_state[player][1] > self.observation_space[player].high[1]:
-            next_state[player][1] = self.observation_space[player].low[1]
+        # if next_state[player][1] < self.observation_space[player].low[1]:
+        #     next_state[player][1] = self.observation_space[player].high[1]
+        # elif next_state[player][1] > self.observation_space[player].high[1]:
+        #     next_state[player][1] = self.observation_space[player].low[1]
+
+
+        out_of_bounds = False
+
+        if next_state[player][0] <= self.observation_space[player].low[0] or next_state[player][0] >= self.observation_space[player].high[0]:
+            out_of_bounds = True
+
+        if next_state[player][1] <= self.observation_space[player].low[1] or next_state[player][1] >= self.observation_space[player].high[1]:
+            out_of_bounds = True
+
+        if out_of_bounds:
+            reward = -1
+            done = True
+            info = {'player': player, 'is_legal':False, 'status':'out_of_bounds'}
+
+            if update_env:
+                self.state = next_state
+
+            return next_state, reward, done, info
 
 
         
@@ -151,6 +171,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         #self.reward = np.exp(-dist_goal) - np.exp(-dist_capture)
         self.reward = np.exp(-dist_goal)
+
 
       
         
@@ -484,6 +505,14 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             'defender': np.array([defender_x, defender_y, defender_theta])
         }
         return env_state
+
+
+    def unconstrained_select_action(self, nn_state, params, policy_net, key, epsilon):
+        if jax.random.uniform(key) < epsilon:
+            return jax.random.choice(key, self.num_actions)
+        else:
+            probs = policy_net.apply(params, nn_state)
+            return jax.random.categorical(key, probs)
     
     def get_legal_actions_mask(self, state, player):
         legal_actions_mask = []
@@ -492,30 +521,40 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             legal_actions_mask.append(int(info['is_legal']))
         return jnp.array(legal_actions_mask)
 
+    def constrained_select_action(self, nn_state, policy_net, params, legal_actions_mask, key, epsilon):
+        if jax.random.uniform(key) < epsilon:
+            legal_actions_indices = jnp.arange(len(legal_actions_mask))[legal_actions_mask.astype(bool)]
+            return jax.random.choice(key, legal_actions_indices)
+        else:
+            probs = policy_net.apply(params, nn_state, legal_actions_mask)
+            action = jax.random.categorical(key, probs)
+            return action
 
-    def select_action_sr(self, nn_state, params, policy_net, key, epsilon):
-                if jax.random.uniform(key) < epsilon:
-                    return jax.random.choice(key, self.num_actions)
-                else:
-                    probs = policy_net.apply(params, nn_state)
-                    return jax.random.categorical(key, probs)
 
 
-    def pad_and_mask(self, states, actions, returns, max_length=100):
+
+
+
+    
+
+
+    def pad_and_mask(self, states, actions, action_masks, returns):
         # Convert to numpy arrays
         states = np.array(states)
         actions = np.array(actions)
+        action_masks = np.array(action_masks)
         returns = np.array(returns)
 
         # Pad the states, actions, and returns
-        padded_states = np.pad(states, ((0, max_length - len(states)), (0, 0)), 'constant', constant_values=0)
-        padded_actions = np.pad(actions, (0, max_length - len(actions)), 'constant', constant_values=0)
-        padded_returns = np.pad(returns, (0, max_length - len(returns)), 'constant', constant_values=0)
+        padded_states = np.pad(states, ((0, self.max_steps - len(states)), (0, 0)), 'constant', constant_values=0)
+        padded_actions = np.pad(actions, (0, self.max_steps  - len(actions)), 'constant', constant_values=0)
+        padded_action_masks = np.pad(action_masks, ((0, self.max_steps  - len(action_masks)), (0,0)), 'constant', constant_values=0)
+        padded_returns = np.pad(returns, (0, self.max_steps  - len(returns)), 'constant', constant_values=0)
 
         # Create a mask where the value is 1 for actual values and 0 for padding
-        mask = np.concatenate([np.ones(len(states)), np.zeros(max_length - len(states))])
+        padding_mask = np.concatenate([np.ones(len(states)), np.zeros(self.max_steps  - len(states))])
 
-        return padded_states, padded_actions, padded_returns, mask
+        return padded_states, padded_actions, padded_action_masks, padded_returns, padding_mask
 
 
 
@@ -524,54 +563,91 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         
     def single_rollout(self,args):
-        params, policy_net, key, epsilon, gamma, render, for_q_value = args
+        game_type, params, policy_net, key, epsilon, gamma, render, for_q_value = args
 
-        
 
         states = {player: [] for player in self.players}
         actions = {player: [] for player in self.players}
+        action_masks = {player: [] for player in self.players}
         rewards = {player: [] for player in self.players}
-        mask = {player: [] for player in self.players}
+        padding_mask = {player: [] for player in self.players}
+
         wins = {'attacker': 0, 'defender': 0, 'draw': 0}
         done = False
         step = 0
         defender_wins = False
         attacker_wins = False
+        defender_oob = False
 
-        if not for_q_value:
-            state = self.reset()
-        else:
-            state = self.state
+
+        state = self.state
+        #state = self.reset()
+
+        if for_q_value:
             #append 0 to rewards
             rewards['attacker'].append(0)
             rewards['defender'].append(0)
-
+        # else: 
+        #     state = self.reset()
+            
         nn_state = self.encode_helper(state)
 
 
-        while not done and not defender_wins and not attacker_wins and step < 100:
+        while not done and not defender_wins and not attacker_wins and step < self.max_steps:
             for player in self.players:
                 states[player].append(nn_state)
 
                 key, subkey = jax.random.split(key)
 
-                #action = jax.random.choice(subkey, self.num_actions)
 
-                action = self.select_action_sr(nn_state, params[player], policy_net,  subkey, epsilon)
+                if game_type == 'nash':
+                    action = self.unconstrained_select_action(nn_state, params[player], policy_net,  subkey, epsilon)
+                    state, reward, done, info = self.step(state=state, action=action, player=player, update_env=True)
+                    nn_state = self.encode_helper(state)
+                    actions[player].append(action)
+                    rewards[player].append(reward)
+                    action_masks[player].append([1]*self.num_actions)
+
+
+                elif game_type == 'stackelberg':
+                    legal_actions_mask = self.get_legal_actions_mask(state, player)
+                    if sum(legal_actions_mask) != 0:
+                        action = self.constrained_select_action(nn_state, policy_net, params[player], legal_actions_mask, subkey, epsilon)
+                        action_masks[player].append(legal_actions_mask)
+                        state, reward, done, info = self.step(state=state, action=action, player=player, update_env=True)
+                        nn_state = self.encode_helper(state)
+                        actions[player].append(action)
+                        rewards[player].append(reward)
+                    else:
+                        done = True
+                        if player == 'defender': 
+                            attacker_wins = True
+                        elif player == 'attacker': 
+                            defender_wins = True
+                            
+
+
+
                 
 
-                state, reward, done, info = self.step(state=state, action=action, player=player, update_env=True)
-                nn_state = self.encode_helper(state)
-                actions[player].append(action)
-                rewards[player].append(reward)
+                
 
-                if done and player == 'defender': #only attacker can end the game, iterate one more time
+                if done and player == 'defender' and info['is_legal'] == True: #only attacker can end the game, iterate one more time
                     defender_wins = True
                     wins['defender'] += 1
 
                 if (defender_wins and player == 'attacker'): #overwrite the attacker's last reward
                     rewards['attacker'][-1] = -1
                     done = True
+                    break
+
+                if done and player == 'defender' and info['is_legal'] == False: #only attacker can end the game, iterate one more time
+                    defender_oob = True
+
+                if (defender_oob and player == 'attacker'): #overwrite the attacker's last reward
+                    rewards['attacker'][-1] = 1
+                    done = True
+                    wins['attacker'] += 1
                     break
 
                 if (done and player == 'attacker'): #break if attacker wins, game is over
@@ -602,8 +678,8 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         if not for_q_value:
             for player in self.players:
-                states[player], actions[player], returns[player], mask[player] = self.pad_and_mask(states[player], actions[player], returns[player])
+                states[player], actions[player], action_masks[player], returns[player], padding_mask[player] = self.pad_and_mask(states[player], actions[player], action_masks[player], returns[player])
     
         
 
-        return states, actions, returns, mask, wins
+        return states, actions, action_masks, returns, padding_mask, wins
