@@ -1,0 +1,29 @@
+game:
+  type: "nash"
+
+hyperparameters:
+  learning_rate: 0.001
+  gamma: 0.95
+  epsilon_start: 0.05
+  epsilon_end: 0.05
+  epsilon_decay: 1
+
+training:
+  batch_multiple: 1
+  num_episodes: 50000
+  loaded_params: null
+
+eval:
+  eval_interval: 512
+  num_eval_episodes: 128
+
+#these are hard coded!
+architecture:
+  optimizer:
+    optimizer: radam
+    clip: 1.0
+  network:
+    type: "mlp"
+    hidden_layers: [100, 100, 100, 100]
+    activation: "relu"
+    output_activation: "linear"
