@@ -15,36 +15,34 @@ from envs.dubins_car import DubinsCarEnv
 class TwoPlayerDubinsCarEnv(DubinsCarEnv):
     metadata = {'render.modes': ['human']}
 
-    def __init__(self):
+    def __init__(self, game_type, num_actions, size, reward, max_steps, init_defender_position, init_attacker_position, capture_radius, goal_position, goal_radius, timestep, v_max, omega_max):
         super().__init__()
 
-
+        self.game_type = game_type
         self.players = ['defender', 'attacker']
-        self.num_actions = 3
+        self.num_actions = num_actions #3
         self.action_space = {'attacker':spaces.Discrete(self.num_actions), 'defender':spaces.Discrete(self.num_actions)}
 
-        self.size = 4
-        self.reward = 1
-        self.max_steps = 50
+        self.size = size #4
+        self.reward = reward #1
+        self.max_steps = max_steps# 50
 
         self.observation_space= {'attacker':spaces.Box(low=np.array([-self.size, -self.size, 0]), high=np.array([self.size,self.size , 2*np.pi]), dtype=np.float32), 
                                 'defender':spaces.Box(low=np.array([-self.size, -self.size, 0]), high=np.array([self.size, self.size, 2*np.pi]), dtype=np.float32)}
 
 
 
-        self.state = {'attacker': np.array([0,0,0]), 'defender':np.array([0,0,np.pi])}
+        self.init_defender_position = init_defender_position #np.array([0,0,0])
+        self.init_attacker_position = init_attacker_position #np.array([2,2,0])
+        self.state = {'attacker': np.array([self.init_attacker_position]), 'defender':np.array(self.init_defender_position)}
+        self.capture_radius = capture_radius #0.5 # radius of the obstacle
 
-        self.goal_position = np.array([0,0]) # position of the goal
-        self.capture_radius = 0.5 # radius of the obstacle
+        self.goal_position = np.array(goal_position) # position of the goal
+        self.goal_radius = goal_radius # minimum distance to goal to consider the task as done
 
-
-
-        self.min_distance_to_goal = 1 # minimum distance to goal to consider the task as done
-        self.min_distance_to_obstacle = 0.1 # minimum distance to obstacle to consider the task as done
-
-        self.timestep = 1 # timestep in seconds
-        self.v_max = 0.25 # maximum speed
-        self.omega_max = 65 * np.pi/180  # maximum angular velocity (radians)
+        self.timestep = timestep # timestep in seconds
+        self.v_max = v_max # maximum speed
+        self.omega_max = omega_max * np.pi/180  # maximum angular velocity (radians)
         self.images = []
         self.positions = {'attacker': [], 'defender': []}
         
@@ -54,9 +52,8 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         Reset the environment and return the initial state
         """
         
-        self.state['defender'] = np.array([0, 0., 0.], dtype=self.observation_space['defender'].dtype)
-
-        self.state['attacker'] = np.array([2., 2., 0.], dtype=self.observation_space['defender'].dtype)
+        self.state['defender'] = np.array(self.init_defender_position, dtype=self.observation_space['defender'].dtype)
+        self.state['attacker'] = np.array(self.init_attacker_position, dtype=self.observation_space['defender'].dtype)
 
         illegal = True
         epsilon = 0.25
@@ -66,7 +63,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             #self.state['defender'] = self.observation_space['defender'].sample()
 
             dist_capture = np.linalg.norm(self.state['attacker'][:2] - self.state['defender'][:2]) - self.capture_radius - 1
-            dist_goal = np.linalg.norm(self.state['attacker'][:2] - self.goal_position) - self.min_distance_to_goal - 1
+            dist_goal = np.linalg.norm(self.state['attacker'][:2] - self.goal_position) - self.goal_radius - 1
 
             if dist_capture > 0 and dist_goal > 0:
                 illegal = False
@@ -195,7 +192,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
             return next_state, reward, done, info
        
-        if dist_goal < self.min_distance_to_goal:
+        if dist_goal < self.goal_radius:
             reward = 1
             done = True
             info = {'player': player, 'is_legal':True, 'status':'goal_reached'}
@@ -337,7 +334,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
 
         # draw goal
-        goal = plt.Circle((self.goal_position[0], self.goal_position[1]), self.min_distance_to_goal, color='g', fill=False)
+        goal = plt.Circle((self.goal_position[0], self.goal_position[1]), self.goal_radius, color='g', fill=False)
 
         # draw obstacle
         plt.gca().add_artist(attacker)
@@ -565,6 +562,9 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
     def single_rollout(self,args):
         game_type, params, policy_net, key, epsilon, gamma, render, for_q_value = args
 
+        if game_type != self.game_type:
+            raise ValueError(f"game_type {game_type} does not match self.game_type {self.game_type}")
+
 
         states = {player: [] for player in self.players}
         actions = {player: [] for player in self.players}
@@ -601,7 +601,8 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
 
                 if game_type == 'nash':
-                    action = self.unconstrained_select_action(nn_state, params[player], policy_net,  subkey, epsilon)
+                    if player == 'attacker': action = 0
+                    else: action = self.unconstrained_select_action(nn_state, params[player], policy_net,  subkey, epsilon)
                     state, reward, done, info = self.step(state=state, action=action, player=player, update_env=True)
                     nn_state = self.encode_helper(state)
                     actions[player].append(action)

@@ -171,10 +171,12 @@ def parallel_nash_reinforce(
                 )
 
         q_values = np.array([move["q_value"] for move in move_list]).reshape(3, 3)
-        best_attacker_moves = np.argmax(q_values, axis=1)
+        #best_attacker_moves = np.argmax(q_values, axis=1)
+        best_attacker_moves = np.ravel(np.where(q_values[:,0]))
         best_defender_move = np.argmin(np.max(q_values, axis=1))
         best_attacker_move = best_attacker_moves[best_defender_move]
         q = q_values[best_defender_move][best_attacker_move]
+
         return q
 
     def calc_bellman_error(env, params, policy_net, num_rollouts, key, epsilon, gamma):
@@ -255,7 +257,7 @@ def parallel_nash_reinforce(
 
     # Define the optimizer
     agent_optimizer = optax.chain(
-        optax.clip(1.0), optax.radam(learning_rate=learning_rate)
+        optax.clip(1.0), optax.adam(learning_rate=learning_rate)
     )
     optimizer = {player: agent_optimizer for player in env.players}
     opt_state = {
@@ -842,10 +844,22 @@ if __name__ == "__main__":
     
     game_type = config['game']['type']
     timestamp = str(datetime.datetime.now())
-    env = TwoPlayerDubinsCarEnv()
-    print(game_type, " starting experiment at :", timestamp)
 
-    writer = SummaryWriter(f"runs/experiment_{game_type}" + timestamp)
+    env = TwoPlayerDubinsCarEnv(
+        game_type=game_type,
+        num_actions=config['env']['num_actions'],
+        size=config['env']['board_size'],
+        reward=config['env']['reward'],
+        max_steps=config['env']['max_steps'],
+        init_defender_position=config['env']['init_defender_position'],
+        init_attacker_position=config['env']['init_attacker_position'],
+        capture_radius=config['env']['capture_radius'],
+        goal_position=config['env']['goal_position'],
+        goal_radius=config['env']['goal_radius'],
+        timestep=config['env']['timestep'],
+        v_max=config['env']['velocity'],
+        omega_max=config['env']['turning_angle'],
+    )
 
     # Hyperparameters
     learning_rate = config['hyperparameters']['learning_rate']
@@ -855,21 +869,23 @@ if __name__ == "__main__":
     epsilon_decay = config['hyperparameters']['epsilon_decay']
 
     # Training parameters
-    num_parallel = mp.cpu_count()
-    print("using", num_parallel, "cores")
     batch_multiple = config['training']['batch_multiple']  # the batch size will be num_parallel * batch_multiple
     num_episodes = config['training']['num_episodes']
     loaded_params = config['training']['loaded_params']
+    num_parallel = 16 #mp.cpu_count()
+    if num_parallel != config['training']['num_parallel']: 
+        ValueError("num_parallel in config file does not match the number of cores on this machine")
+    print("cpu_count", num_parallel, "config", config['training']['num_parallel'])
 
     # Evaluation parameters
     eval_interval = config['eval']['eval_interval']
     num_eval_episodes = config['eval']['num_eval_episodes']
 
+    # Logging
+    print(game_type, " starting experiment at :", timestamp)
+    writer = SummaryWriter(f"runs/experiment_{game_type}" + timestamp)
 
-
-
-
-
+    # Training
     if game_type == "nash":
         trained_params = parallel_nash_reinforce(
             env,
