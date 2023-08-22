@@ -171,8 +171,8 @@ def parallel_nash_reinforce(
                 )
 
         q_values = np.array([move["q_value"] for move in move_list]).reshape(3, 3)
-        #best_attacker_moves = np.argmax(q_values, axis=1)
-        best_attacker_moves = np.ravel(np.where(q_values[:,0]))
+        best_attacker_moves = np.argmax(q_values, axis=1)
+        #best_attacker_moves = np.ravel(np.where(q_values[:,0]))
         best_defender_move = np.argmin(np.max(q_values, axis=1))
         best_attacker_move = best_attacker_moves[best_defender_move]
         q = q_values[best_defender_move][best_attacker_move]
@@ -257,7 +257,7 @@ def parallel_nash_reinforce(
 
     # Define the optimizer
     agent_optimizer = optax.chain(
-        optax.clip(1.0), optax.adam(learning_rate=learning_rate)
+        optax.radam(learning_rate=learning_rate), 
     )
     optimizer = {player: agent_optimizer for player in env.players}
     opt_state = {
@@ -657,7 +657,7 @@ def parallel_stackelberg_reinforce(
 
     # Define the optimizer
     agent_optimizer = optax.chain(
-        optax.clip(1.0), optax.radam(learning_rate=learning_rate)
+        optax.radam(learning_rate=learning_rate), 
     )
     optimizer = {player: agent_optimizer for player in env.players}
     opt_state = {
@@ -872,7 +872,7 @@ if __name__ == "__main__":
     batch_multiple = config['training']['batch_multiple']  # the batch size will be num_parallel * batch_multiple
     num_episodes = config['training']['num_episodes']
     loaded_params = config['training']['loaded_params']
-    num_parallel = 16 #mp.cpu_count()
+    num_parallel = config['training']['num_parallel'] #mp.cpu_count()
     if num_parallel != config['training']['num_parallel']: 
         ValueError("num_parallel in config file does not match the number of cores on this machine")
     print("cpu_count", num_parallel, "config", config['training']['num_parallel'])

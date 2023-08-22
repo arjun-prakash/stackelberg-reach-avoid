@@ -125,8 +125,8 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         next_state[player][1] += v * np.sin(next_state[player][2]) * self.timestep
 
         dist_goal = np.linalg.norm(next_state['attacker'][:2] - self.goal_position)
-
-        #self.reward = -dist_goal/4
+        #reward = np.exp(-dist_goal)
+        #reward = -(dist_goal**2)
 
 
 
@@ -167,7 +167,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         dist_capture = np.linalg.norm(next_state['attacker'][:2] - next_state['defender'][:2]) 
 
         #self.reward = np.exp(-dist_goal) - np.exp(-dist_capture)
-        self.reward = np.exp(-dist_goal)
+        
 
 
       
@@ -203,7 +203,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             return next_state, reward, done, info
         
         else:
-            reward = 0 #self.reward
+            reward = 0
             done = False
             info = {'player': player, 'is_legal':True, 'status':'in_progress'}
             if update_env:
@@ -528,6 +528,11 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             return action
 
 
+    def deterministic_select_action(self, nn_state, params, policy_net):
+        
+        probs = policy_net.apply(params, nn_state)
+        return jnp.argmax(probs)
+
 
 
 
@@ -601,8 +606,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
 
                 if game_type == 'nash':
-                    if player == 'attacker': action = 0
-                    else: action = self.unconstrained_select_action(nn_state, params[player], policy_net,  subkey, epsilon)
+                    action = self.unconstrained_select_action(nn_state, params[player], policy_net,  subkey, epsilon)
                     state, reward, done, info = self.step(state=state, action=action, player=player, update_env=True)
                     nn_state = self.encode_helper(state)
                     actions[player].append(action)
@@ -635,7 +639,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
                 if done and player == 'defender' and info['is_legal'] == True: #only attacker can end the game, iterate one more time
                     defender_wins = True
-                    wins['defender'] += 1
+                    wins['defender'] = 1
 
                 if (defender_wins and player == 'attacker'): #overwrite the attacker's last reward
                     rewards['attacker'][-1] = -1
@@ -648,16 +652,16 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                 if (defender_oob and player == 'attacker'): #overwrite the attacker's last reward
                     rewards['attacker'][-1] = 1
                     done = True
-                    wins['attacker'] += 1
+                    wins['attacker'] = 1
                     break
 
                 if (done and player == 'attacker'): #break if attacker wins, game is over
                     if info['is_legal']:
                         attacker_wins = True
-                        wins['attacker'] += 1
+                        wins['attacker'] = 1
                     elif not info['is_legal']:
                         defender_wins = True
-                        wins['defender'] += 1
+                        wins['defender'] = 1
                     break
                 if render:
                     self.render()
@@ -666,6 +670,10 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
             step += 1
             #print(step)
+
+        if not defender_wins and not attacker_wins:
+            wins['draw'] = 1
+            #rewards['attacker'][-1] = -1
 
         returns = {player: [] for player in self.players}
 
