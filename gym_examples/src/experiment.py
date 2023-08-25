@@ -139,7 +139,8 @@ def parallel_nash_reinforce(
         return v
 
     def get_q_values(env, params, policy_net, num_rollouts, key, epsilon, gamma):
-        initial_state = env.reset()
+        initial_state = env.state #env.reset()
+        print('initial_state', initial_state)
         move_list = []
         for d_action in range(env.action_space["defender"].n):
             defender_state, d_reward, _, _ = env.step(
@@ -180,7 +181,7 @@ def parallel_nash_reinforce(
         return q
 
     def calc_bellman_error(env, params, policy_net, num_rollouts, key, epsilon, gamma):
-        x_a = np.linspace(2, 2, 1)
+        x_a = np.linspace(-2, 2, 4)
         y_a = np.linspace(2, 2, 1)
         theta_a = np.linspace(0, 0, 1)
         x_d = np.linspace(0, 0, 1)
@@ -883,7 +884,7 @@ if __name__ == "__main__":
 
     # Logging
     print(game_type, " starting experiment at :", timestamp)
-    writer = SummaryWriter(f"runs/experiment_{game_type}" + timestamp)
+    writer = SummaryWriter(f"runs/experiment_{game_type}" + timestamp+"_real")
 
     # Training
     if game_type == "nash":

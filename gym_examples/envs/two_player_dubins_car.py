@@ -526,6 +526,15 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             probs = policy_net.apply(params, nn_state, legal_actions_mask)
             action = jax.random.categorical(key, probs)
             return action
+        
+    def constrained_deterministic_select_action(self, nn_state, policy_net, params, legal_actions_mask, key, epsilon):
+        if jax.random.uniform(key) < epsilon:
+            legal_actions_indices = jnp.arange(len(legal_actions_mask))[legal_actions_mask.astype(bool)]
+            return jax.random.choice(key, legal_actions_indices)
+        else:
+            probs = policy_net.apply(params, nn_state, legal_actions_mask)
+            action = jnp.argmax(probs)
+            return action
 
 
     def deterministic_select_action(self, nn_state, params, policy_net):
