@@ -206,7 +206,7 @@ def parallel_nash_reinforce(
             episode = int(file.split('_episode_')[1].split('_params')[0])
             bellman_error = calc_bellman_error(env, loaded_params, policy_net, num_eval_episodes, jax.random.PRNGKey(episode), epsilon_start, gamma)
             print('bellman_error', bellman_error)
-            writer.add_scalar('bellman_error', bellman_error, episode)
+            #writer.add_scalar('bellman_error', bellman_error, episode)
 
         
 
@@ -266,7 +266,9 @@ def parallel_stackelberg_reinforce(
             all_wins,
         )
 
-    def get_values(env, params, policy_net, num_rollouts, key, epsilon, gamma):
+    def get_values(env, params, policy_net, grid_state, num_rollouts, key, epsilon, gamma):
+        initial_state = env.set(grid_state[0], grid_state[1], grid_state[2], grid_state[3], grid_state[4], grid_state[5])
+        #print('initial_state values', env.state)
         states, actions, action_masks, returns, masks, wins = parallel_rollouts(
             env,
             params,
@@ -282,11 +284,12 @@ def parallel_stackelberg_reinforce(
         v = np.mean(attacker_returns)
         return v
 
-    def get_q_values(env, params, policy_net, num_rollouts, key, epsilon, gamma):
-        initial_state = env.state #env.reset()
-        print('initial_state', initial_state)
+    def get_q_values(env, params, policy_net, grid_state, num_rollouts, key, epsilon, gamma):
+
         move_list = []
         for d_action in range(env.action_space["defender"].n):
+            initial_state = env.set(grid_state[0], grid_state[1], grid_state[2], grid_state[3], grid_state[4], grid_state[5])
+            #print('initial_state q_values', initial_state)
             defender_state, d_reward, _, _ = env.step(
                 initial_state, d_action, "defender", update_env=True
             )
@@ -294,6 +297,7 @@ def parallel_stackelberg_reinforce(
                 state, reward, _, _ = env.step(
                     defender_state, a_action, "attacker", update_env=True
                 )
+                #print('state after step', state)
                 states, actions, action_masks, returns, masks, wins = parallel_rollouts(
                     env,
                     params,
@@ -347,15 +351,13 @@ def parallel_stackelberg_reinforce(
         v_vector = []
         q_vector = []
         for g in tqdm(grid):
-            state = env.set(g[0], g[1], g[2], g[3], g[4], g[5])
             v = get_values(
-                env, params, policy_net, num_rollouts, jax.random.PRNGKey(42), 0.01, 0.95
+                env, params, policy_net, g, num_rollouts, jax.random.PRNGKey(42), 0.01, 0.95
             )
             v_vector.append(v)
 
-            state = env.set(g[0], g[1], g[2], g[3], g[4], g[5])
             q = get_q_values(
-                env, params, policy_net, num_rollouts, jax.random.PRNGKey(42), 0.01, 0.95
+                env, params, policy_net, g, num_rollouts, jax.random.PRNGKey(42), 0.01, 0.95
             )
             q_vector.append(q)
 
@@ -404,7 +406,7 @@ def parallel_stackelberg_reinforce(
             episode = int(file.split('_episode_')[1].split('_params')[0])
             bellman_error = calc_bellman_error(env, loaded_params, policy_net, num_eval_episodes, jax.random.PRNGKey(episode), epsilon_start, gamma)
             print('bellman_error', bellman_error)
-            writer.add_scalar('bellman_error', bellman_error, episode)
+            #writer.add_scalar('bellman_error', bellman_error, episode)
 
 
       
@@ -458,21 +460,21 @@ if __name__ == "__main__":
     epsilon_decay = config['hyperparameters']['epsilon_decay']
 
     # Training parameters
-    batch_multiple = config['training']['batch_multiple']  # the batch size will be num_parallel * batch_multiple
+    batch_multiple = 1# config['training']['batch_multiple']  # the batch size will be num_parallel * batch_multiple
     num_episodes = config['training']['num_episodes']
     loaded_params = config['training']['loaded_params']
-    num_parallel = config['training']['num_parallel'] #mp.cpu_count()
+    num_parallel = 2# config['training']['num_parallel'] #mp.cpu_count()
     if num_parallel != config['training']['num_parallel']: 
         ValueError("num_parallel in config file does not match the number of cores on this machine")
     print("cpu_count", num_parallel, "config", config['training']['num_parallel'])
 
     # Evaluation parameters
     eval_interval = config['eval']['eval_interval']
-    num_eval_episodes = config['eval']['num_eval_episodes']
+    num_eval_episodes = 2# config['eval']['num_eval_episodes']
 
     # Logging
     print(game_type, " starting experiment at :", timestamp)
-    writer = SummaryWriter(f"runs/experiment_{game_type}" + timestamp+"_bellman")
+    writer = SummaryWriter(f"runs/experiment_{game_type}" + timestamp+"_debug")
 
     import glob
     import pickle
