@@ -28,6 +28,139 @@ from torch.utils.tensorboard import SummaryWriter
 import yaml
 
 
+def parallel_rollouts(
+    env,
+    params,
+    policy_net,
+    num_rollouts,
+    key,
+    epsilon,
+    gamma,
+    render=False,
+    for_q_value=False,
+):
+    keys = jax.random.split(key, num_rollouts)
+    args = [
+        (env.game_type, params, policy_net, k, epsilon, gamma, render, for_q_value)
+        for k in keys
+    ]
+    with ProcessPool() as pool:
+        results = pool.map(env.single_rollout, args)
+    (
+        all_states,
+        all_actions,
+        all_action_masks,
+        all_returns,
+        all_masks,
+        all_wins,
+    ) = zip(*results)
+    return (
+        all_states,
+        all_actions,
+        all_action_masks,
+        all_returns,
+        all_masks,
+        all_wins,
+    )
+
+def get_values(env, params, policy_net, grid_state, num_rollouts, key, epsilon, gamma):
+        initial_state = env.set(grid_state[0], grid_state[1], grid_state[2], grid_state[3], grid_state[4], grid_state[5])
+        #print('initial_state values', env.state)
+        states, actions, action_masks, returns, masks, wins = parallel_rollouts(
+            env,
+            params,
+            policy_net,
+            num_rollouts,
+            key,
+            epsilon,
+            gamma,
+            render=False,
+            for_q_value=False,
+        )
+        attacker_returns = [r["attacker"][0] for r in returns]
+        v = np.mean(attacker_returns)
+        return v
+
+def get_q_values(env, params, policy_net, grid_state, num_rollouts, key, epsilon, gamma):
+
+    move_list = []
+    for d_action in range(env.action_space["defender"].n):
+        initial_state = env.set(grid_state[0], grid_state[1], grid_state[2], grid_state[3], grid_state[4], grid_state[5])
+        #print('initial_state q_values', initial_state)
+        defender_state, d_reward, _, _ = env.step(
+            initial_state, d_action, "defender", update_env=True
+        )
+        for a_action in range(env.action_space["attacker"].n):
+            state, reward, _, _ = env.step(
+                defender_state, a_action, "attacker", update_env=True
+            )
+            #print('state after step', state)
+            states, actions, action_masks, returns, masks, wins = parallel_rollouts(
+                env,
+                params,
+                policy_net,
+                num_rollouts,
+                key,
+                epsilon,
+                gamma,
+                render=False,
+                for_q_value=True,
+            )
+            attacker_returns = [r["attacker"][0] for r in returns]
+            mean_attacker_returns = np.mean(attacker_returns)
+            move_list.append(
+                {
+                    "defender": d_action,
+                    "attacker": a_action,
+                    "q_value": mean_attacker_returns,
+                }
+            )
+
+    q_values = np.array([move["q_value"] for move in move_list]).reshape(
+        env.num_actions, env.num_actions
+    )
+    best_attacker_moves = np.argmax(q_values, axis=1)
+    best_defender_move = np.argmin(np.max(q_values, axis=1))
+    best_attacker_move = best_attacker_moves[best_defender_move]
+    q = q_values[best_defender_move][best_attacker_move]
+    return q
+
+def calc_bellman_error(env, params, policy_net, num_rollouts, key, epsilon, gamma):
+    x_a = np.linspace(-2, 2, 4)
+    y_a = np.linspace(2, 2, 1)
+    theta_a = np.linspace(0, 0, 1)
+    x_d = np.linspace(0, 0, 1)
+    y_d = np.linspace(0, 0, 1)
+    theta_d = np.linspace(0, 0, 1)
+
+    xxa, yya, tta, xxd, yyd, ttd = np.meshgrid(x_a, y_a, theta_a, x_d, y_d, theta_d)
+    grid = np.vstack(
+        [
+            xxa.ravel(),
+            yya.ravel(),
+            tta.ravel(),
+            xxd.ravel(),
+            yyd.ravel(),
+            ttd.ravel(),
+        ]
+    ).T
+
+    v_vector = []
+    q_vector = []
+    for g in tqdm(grid):
+        v = get_values(
+            env, params, policy_net, g, num_rollouts, jax.random.PRNGKey(42), 0.01, 0.95
+        )
+        v_vector.append(v)
+
+        q = get_q_values(
+            env, params, policy_net, g, num_rollouts, jax.random.PRNGKey(42), 0.01, 0.95
+        )
+        q_vector.append(q)
+
+    return np.linalg.norm(np.array(q_vector) - np.array(v_vector))
+
+
 def parallel_nash_reinforce(
     env,
     num_episodes,
@@ -47,135 +180,9 @@ def parallel_nash_reinforce(
     # Define loss function
     # Define loss function
     
-    def parallel_rollouts(
-        env,
-        params,
-        policy_net,
-        num_rollouts,
-        key,
-        epsilon,
-        gamma,
-        render=False,
-        for_q_value=False,
-    ):
-        keys = jax.random.split(key, num_rollouts)
-        args = [
-            ("nash", params, policy_net, k, epsilon, gamma, render, for_q_value)
-            for k in keys
-        ]
-        with ProcessPool() as pool:
-            results = pool.map(env.single_rollout, args)
-        (
-            all_states,
-            all_actions,
-            all_action_masks,
-            all_returns,
-            all_masks,
-            all_wins,
-        ) = zip(*results)
-        return (
-            all_states,
-            all_actions,
-            all_returns,
-            all_masks,
-            all_wins,
-        )  # no need to action masks
+    
 
-    def get_values(env, params, policy_net, num_rollouts, key, epsilon, gamma):
-        states, actions, returns, masks, wins = parallel_rollouts(
-            env,
-            params,
-            policy_net,
-            num_rollouts,
-            key,
-            epsilon,
-            gamma,
-            render=False,
-            for_q_value=False,
-        )
-        attacker_returns = [r["attacker"][0] for r in returns]
-        v = np.mean(attacker_returns)
-        return v
-
-    def get_q_values(env, params, policy_net, num_rollouts, key, epsilon, gamma):
-        initial_state = env.state #env.reset()
-        print('initial_state', initial_state)
-        move_list = []
-        for d_action in range(env.action_space["defender"].n):
-            defender_state, d_reward, _, _ = env.step(
-                initial_state, d_action, "defender", update_env=True
-            )
-            for a_action in range(env.action_space["attacker"].n):
-                state, reward, _, _ = env.step(
-                    defender_state, a_action, "attacker", update_env=True
-                )
-                states, actions, returns, masks, wins = parallel_rollouts(
-                    env,
-                    params,
-                    policy_net,
-                    num_rollouts,
-                    key,
-                    epsilon,
-                    gamma,
-                    render=False,
-                    for_q_value=True,
-                )
-                attacker_returns = [r["attacker"][0] for r in returns]
-                mean_attacker_returns = np.mean(attacker_returns)
-                move_list.append(
-                    {
-                        "defender": d_action,
-                        "attacker": a_action,
-                        "q_value": mean_attacker_returns,
-                    }
-                )
-
-        q_values = np.array([move["q_value"] for move in move_list]).reshape(3, 3)
-        best_attacker_moves = np.argmax(q_values, axis=1)
-        #best_attacker_moves = np.ravel(np.where(q_values[:,0]))
-        best_defender_move = np.argmin(np.max(q_values, axis=1))
-        best_attacker_move = best_attacker_moves[best_defender_move]
-        q = q_values[best_defender_move][best_attacker_move]
-
-        return q
-
-    def calc_bellman_error(env, params, policy_net, num_rollouts, key, epsilon, gamma):
-        x_a = np.linspace(-2, 2, 4)
-        y_a = np.linspace(2, 2, 1)
-        theta_a = np.linspace(0, 0, 1)
-        x_d = np.linspace(0, 0, 1)
-        y_d = np.linspace(0, 0, 1)
-        theta_d = np.linspace(0, 0, 1)
-
-        xxa, yya, tta, xxd, yyd, ttd = np.meshgrid(x_a, y_a, theta_a, x_d, y_d, theta_d)
-        grid = np.vstack(
-            [
-                xxa.ravel(),
-                yya.ravel(),
-                tta.ravel(),
-                xxd.ravel(),
-                yyd.ravel(),
-                ttd.ravel(),
-            ]
-        ).T
-
-        v_vector = []
-        q_vector = []
-        for g in tqdm(grid):
-            state = env.set(g[0], g[1], g[2], g[3], g[4], g[5])
-            v = get_values(
-                env, params, policy_net, num_rollouts, jax.random.PRNGKey(42), 0.01, 0.95
-            )
-            v_vector.append(v)
-
-            state = env.set(g[0], g[1], g[2], g[3], g[4], g[5])
-            q = get_q_values(
-                env, params, policy_net, num_rollouts, jax.random.PRNGKey(42), 0.01, 0.95
-            )
-            q_vector.append(q)
-
-
-        return np.linalg.norm(np.array(q_vector) - np.array(v_vector))
+    
 
 
     def policy_network(observation):
@@ -231,143 +238,9 @@ def parallel_stackelberg_reinforce(
     # Define loss function
     
 
-    def parallel_rollouts(
-        env,
-        params,
-        policy_net,
-        num_rollouts,
-        key,
-        epsilon,
-        gamma,
-        render=False,
-        for_q_value=False,
-    ):
-        keys = jax.random.split(key, num_rollouts)
-        args = [
-            ("stackelberg", params, policy_net, k, epsilon, gamma, render, for_q_value)
-            for k in keys
-        ]
-        with ProcessPool() as pool:
-            results = pool.map(env.single_rollout, args)
-        (
-            all_states,
-            all_actions,
-            all_action_masks,
-            all_returns,
-            all_masks,
-            all_wins,
-        ) = zip(*results)
-        return (
-            all_states,
-            all_actions,
-            all_action_masks,
-            all_returns,
-            all_masks,
-            all_wins,
-        )
+   
 
-    def get_values(env, params, policy_net, grid_state, num_rollouts, key, epsilon, gamma):
-        initial_state = env.set(grid_state[0], grid_state[1], grid_state[2], grid_state[3], grid_state[4], grid_state[5])
-        #print('initial_state values', env.state)
-        states, actions, action_masks, returns, masks, wins = parallel_rollouts(
-            env,
-            params,
-            policy_net,
-            num_rollouts,
-            key,
-            epsilon,
-            gamma,
-            render=False,
-            for_q_value=False,
-        )
-        attacker_returns = [r["attacker"][0] for r in returns]
-        v = np.mean(attacker_returns)
-        return v
-
-    def get_q_values(env, params, policy_net, grid_state, num_rollouts, key, epsilon, gamma):
-
-        move_list = []
-        for d_action in range(env.action_space["defender"].n):
-            initial_state = env.set(grid_state[0], grid_state[1], grid_state[2], grid_state[3], grid_state[4], grid_state[5])
-            #print('initial_state q_values', initial_state)
-            defender_state, d_reward, _, _ = env.step(
-                initial_state, d_action, "defender", update_env=True
-            )
-            for a_action in range(env.action_space["attacker"].n):
-                state, reward, _, _ = env.step(
-                    defender_state, a_action, "attacker", update_env=True
-                )
-                #print('state after step', state)
-                states, actions, action_masks, returns, masks, wins = parallel_rollouts(
-                    env,
-                    params,
-                    policy_net,
-                    num_rollouts,
-                    key,
-                    epsilon,
-                    gamma,
-                    render=False,
-                    for_q_value=True,
-                )
-                attacker_returns = [r["attacker"][0] for r in returns]
-                mean_attacker_returns = np.mean(attacker_returns)
-                move_list.append(
-                    {
-                        "defender": d_action,
-                        "attacker": a_action,
-                        "q_value": mean_attacker_returns,
-                    }
-                )
-
-        q_values = np.array([move["q_value"] for move in move_list]).reshape(
-            env.num_actions, env.num_actions
-        )
-        best_attacker_moves = np.argmax(q_values, axis=1)
-        best_defender_move = np.argmin(np.max(q_values, axis=1))
-        best_attacker_move = best_attacker_moves[best_defender_move]
-        q = q_values[best_defender_move][best_attacker_move]
-        return q
-
-    def calc_bellman_error(env, params, policy_net, num_rollouts, key, epsilon, gamma):
-        x_a = np.linspace(-2, 2, 4)
-        y_a = np.linspace(2, 2, 1)
-        theta_a = np.linspace(0, 0, 1)
-        x_d = np.linspace(0, 0, 1)
-        y_d = np.linspace(0, 0, 1)
-        theta_d = np.linspace(0, 0, 1)
-
-        xxa, yya, tta, xxd, yyd, ttd = np.meshgrid(x_a, y_a, theta_a, x_d, y_d, theta_d)
-        grid = np.vstack(
-            [
-                xxa.ravel(),
-                yya.ravel(),
-                tta.ravel(),
-                xxd.ravel(),
-                yyd.ravel(),
-                ttd.ravel(),
-            ]
-        ).T
-
-        v_vector = []
-        q_vector = []
-        for g in tqdm(grid):
-            v = get_values(
-                env, params, policy_net, g, num_rollouts, jax.random.PRNGKey(42), 0.01, 0.95
-            )
-            v_vector.append(v)
-
-            q = get_q_values(
-                env, params, policy_net, g, num_rollouts, jax.random.PRNGKey(42), 0.01, 0.95
-            )
-            q_vector.append(q)
-
-        return np.linalg.norm(np.array(q_vector) - np.array(v_vector))
-
-    def save_params(episode_num, params, game_type, timestamp):
-        with open(
-            f"data/experiment_{game_type}/{timestamp}_episode_{episode_num}_params.pickle", "wb"
-        ) as handle:
-            pickle.dump(params, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    
 
     def policy_network(observation, legal_moves):
         net = hk.Sequential(
@@ -377,7 +250,7 @@ def parallel_stackelberg_reinforce(
                 hk.Linear(100),
                 jax.nn.relu,
                 hk.Linear(100),
-                jax.nn.relu,
+                jax.nn.leaky_relu,
                 hk.Linear(100),
                 jax.nn.relu,
                 hk.Linear(env.num_actions),
@@ -406,7 +279,7 @@ def parallel_stackelberg_reinforce(
             episode = int(file.split('_episode_')[1].split('_params')[0])
             bellman_error = calc_bellman_error(env, loaded_params, policy_net, num_eval_episodes, jax.random.PRNGKey(episode), epsilon_start, gamma)
             print('bellman_error', bellman_error)
-            #writer.add_scalar('bellman_error', bellman_error, episode)
+            writer.add_scalar('bellman_error', bellman_error, episode)
 
 
       
@@ -460,28 +333,30 @@ if __name__ == "__main__":
     epsilon_decay = config['hyperparameters']['epsilon_decay']
 
     # Training parameters
-    batch_multiple = 1# config['training']['batch_multiple']  # the batch size will be num_parallel * batch_multiple
+    batch_multiple = config['training']['batch_multiple']  # the batch size will be num_parallel * batch_multiple
     num_episodes = config['training']['num_episodes']
     loaded_params = config['training']['loaded_params']
-    num_parallel = 2# config['training']['num_parallel'] #mp.cpu_count()
+    num_parallel = config['training']['num_parallel'] #mp.cpu_count()
     if num_parallel != config['training']['num_parallel']: 
         ValueError("num_parallel in config file does not match the number of cores on this machine")
     print("cpu_count", num_parallel, "config", config['training']['num_parallel'])
 
     # Evaluation parameters
     eval_interval = config['eval']['eval_interval']
-    num_eval_episodes = 2# config['eval']['num_eval_episodes']
+    num_eval_episodes = config['eval']['num_eval_episodes']
 
     # Logging
     print(game_type, " starting experiment at :", timestamp)
-    writer = SummaryWriter(f"runs/experiment_{game_type}" + timestamp+"_debug")
+    writer = SummaryWriter(f"runs2/experiment_{game_type}" + timestamp+"_bellman_error_fix")
 
     import glob
     import pickle
 
     # Get a list of all files in the directory
     #files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_nash/2023-08-24 15:30:06.415206_episode_*_params.pickle')
-    files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-08-23 13:33:43.910321_episode_*_params.pickle')
+    #files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-08-23 13:33:43.910321_episode_*_params.pickle')
+    files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-09-01 09:50:40.796960_episode_*_params.pickle')
+
     files.sort(key=lambda x: int(x.split('_episode_')[1].split('_params')[0]))
     print(files)
 

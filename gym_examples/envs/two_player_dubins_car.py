@@ -184,7 +184,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             else: #defender eats attacker
                 info = {'player': player, 'is_legal':True, 'status':'eaten'}
                 done = True
-                reward = -1 # -self.reward
+                reward = -1
 
 
             if update_env:
@@ -574,6 +574,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         
     def single_rollout(self,args):
+        #print("env state" , self.state)
         game_type, params, policy_net, key, epsilon, gamma, render, for_q_value = args
 
         if game_type != self.game_type:
@@ -626,7 +627,10 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                 elif game_type == 'stackelberg':
                     legal_actions_mask = self.get_legal_actions_mask(state, player)
                     if sum(legal_actions_mask) != 0:
-                        action = self.constrained_select_action(nn_state, policy_net, params[player], legal_actions_mask, subkey, epsilon)
+                        if player == 'defender':
+                            action = self.constrained_select_action(nn_state, policy_net, params[player], legal_actions_mask, subkey, epsilon)
+                        elif player == 'attacker':
+                            action = self.constrained_deterministic_select_action(nn_state, policy_net, params[player], legal_actions_mask, subkey, epsilon)
                         action_masks[player].append(legal_actions_mask)
                         state, reward, done, info = self.step(state=state, action=action, player=player, update_env=True)
                         nn_state = self.encode_helper(state)
@@ -636,8 +640,10 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                         done = True
                         if player == 'defender': 
                             attacker_wins = True
+                            wins['attacker'] = 1
                         elif player == 'attacker': 
                             defender_wins = True
+                            wins['defender'] = 1
                             
 
 

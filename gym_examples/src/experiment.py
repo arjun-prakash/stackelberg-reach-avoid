@@ -748,9 +748,9 @@ def parallel_stackelberg_reinforce(
             env.make_gif(f"gifs/experiment_stackelberg/{timestamp}_{episode}.gif")
             save_params(episode, params, "stackelberg", timestamp)
 
-            bellman_error = calc_bellman_error(env, params, policy_net, num_eval_episodes, jax.random.PRNGKey(episode), epsilon, gamma)
-            print('bellman_error', bellman_error)
-            writer.add_scalar('bellman_error', bellman_error, episode)
+            # bellman_error = calc_bellman_error(env, params, policy_net, num_eval_episodes, jax.random.PRNGKey(episode), epsilon, gamma)
+            # print('bellman_error', bellman_error)
+            # writer.add_scalar('bellman_error', bellman_error, episode)
             training_player = env.players[
                 (env.players.index(training_player) + 1) % len(env.players)
             ]  # switch trining plauyer
@@ -884,7 +884,7 @@ if __name__ == "__main__":
 
     # Logging
     print(game_type, " starting experiment at :", timestamp)
-    writer = SummaryWriter(f"runs/experiment_{game_type}" + timestamp+"_real")
+    writer = SummaryWriter(f"runs2/experiment_{game_type}" + timestamp+"_drawless")
 
     # Training
     if game_type == "nash":
