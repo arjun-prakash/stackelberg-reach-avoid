@@ -115,7 +115,7 @@ def get_q_values(env, params, policy_net, grid_state, num_rollouts, key, epsilon
                     "q_value": mean_attacker_returns,
                 }
             )
-
+    print(move_list)
     q_values = np.array([move["q_value"] for move in move_list]).reshape(
         env.num_actions, env.num_actions
     )
@@ -189,13 +189,13 @@ def parallel_nash_reinforce(
         net = hk.Sequential(
             [
                 hk.Linear(100),
-                jax.nn.relu,
+                jax.nn.leaky_relu,
                 hk.Linear(100),
-                jax.nn.relu,
+                jax.nn.leaky_relu,
                 hk.Linear(100),
-                jax.nn.relu,
+                jax.nn.leaky_relu,
                 hk.Linear(100),
-                jax.nn.relu,
+                jax.nn.leaky_relu,
                 hk.Linear(env.num_actions),
                 jax.nn.softmax,
             ]

@@ -339,12 +339,12 @@ def parallel_nash_reinforce(
                     False,
                 ]
             )
-            env.make_gif(f"gifs/experiment_nash/{timestamp}_{episode}.gif")
+            #env.make_gif(f"gifs/experiment_nash/{timestamp}_{episode}.gif")
             save_params(episode, params, "nash", timestamp)
 
-            bellman_error = calc_bellman_error(env, params, policy_net, num_eval_episodes, jax.random.PRNGKey(episode), epsilon, gamma)
-            print('bellman_error', bellman_error)
-            writer.add_scalar('bellman_error', bellman_error, episode)
+            # bellman_error = calc_bellman_error(env, params, policy_net, num_eval_episodes, jax.random.PRNGKey(episode), epsilon, gamma)
+            # print('bellman_error', bellman_error)
+            # writer.add_scalar('bellman_error', bellman_error, episode)
 
         if (episode + 1) % batch_multiple == 0 and valid:
             for player in env.players:
@@ -426,11 +426,12 @@ def parallel_stackelberg_reinforce(
         params, observations, actions, action_masks, returns, padding_mask
     ):
         action_probabilities = policy_net.apply(params, observations, action_masks)
-        log_probs = jnp.log(
-            jnp.take_along_axis(
+        action_probabilities = jax.nn.softmax(action_probabilities)
+        log_probs = jnp.log(jnp.take_along_axis(
                 action_probabilities + 10e-6, actions[..., None], axis=-1
             )
         )
+        
         log_probs = log_probs.reshape(returns.shape)
         masked_loss = padding_mask * (-log_probs * jax.lax.stop_gradient(returns))
         return jnp.sum(masked_loss) / jnp.sum(padding_mask)
@@ -440,8 +441,8 @@ def parallel_stackelberg_reinforce(
         params, observations, actions, action_masks, returns, padding_mask
     ):
         action_probabilities = policy_net.apply(params, observations, action_masks)
-        log_probs = jnp.log(
-            jnp.take_along_axis(
+        action_probabilities = jax.nn.softmax(action_probabilities)
+        log_probs = jnp.log(jnp.take_along_axis(
                 action_probabilities + 10e-6, actions[..., None], axis=-1
             )
         )
@@ -622,7 +623,7 @@ def parallel_stackelberg_reinforce(
                 hk.Linear(100),
                 jax.nn.relu,
                 hk.Linear(env.num_actions),
-                jax.nn.softmax,
+                #jax.nn.softmax,
             ]
         )
         # legal_moves = legal_moves[..., None]
@@ -631,7 +632,7 @@ def parallel_stackelberg_reinforce(
         # legal_moves = jnp.broadcast_to(legal_moves, logits.shape)  # Broadcast to the shape of logits
 
         # masked_logits = jnp.multiply(logits, legal_moves)
-        masked_logits = jnp.where(legal_moves, logits, -1e9)
+        masked_logits = jnp.where(legal_moves, logits, -1e8)
 
         # probabilities = jax.nn.softmax(masked_logits)
         return masked_logits

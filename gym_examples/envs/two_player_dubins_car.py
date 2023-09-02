@@ -631,6 +631,8 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                             action = self.constrained_select_action(nn_state, policy_net, params[player], legal_actions_mask, subkey, epsilon)
                         elif player == 'attacker':
                             action = self.constrained_deterministic_select_action(nn_state, policy_net, params[player], legal_actions_mask, subkey, epsilon)
+                        #action = self.constrained_select_action(nn_state, policy_net, params[player], legal_actions_mask, subkey, epsilon)
+
                         action_masks[player].append(legal_actions_mask)
                         state, reward, done, info = self.step(state=state, action=action, player=player, update_env=True)
                         nn_state = self.encode_helper(state)
