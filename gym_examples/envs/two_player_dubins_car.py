@@ -126,7 +126,9 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         dist_goal = np.linalg.norm(next_state['attacker'][:2] - self.goal_position)
         #reward = np.exp(-dist_goal)
-        #reward = -(dist_goal**2)
+        max_distance = np.sqrt(self.size**2 + self.size**2)
+
+        reward = -((dist_goal - self.goal_radius)**2)/max_distance
 
 
 
@@ -176,15 +178,15 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
 
             if player == 'attacker':
-                info = {'player': player, 'is_legal':False, 'status':'cannot move into defender'}
+                info = {'player': player, 'is_legal':False, 'status':'attacker collided with defender'}
                 done = True
                 next_state = state.copy()
                 reward = -1
 
             else: #defender eats attacker
-                info = {'player': player, 'is_legal':True, 'status':'eaten'}
+                info = {'player': player, 'is_legal':True, 'status':'defender collided with attacker'}
                 done = True
-                reward = -1
+                reward = 0 #-1
 
 
             if update_env:
@@ -203,7 +205,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             return next_state, reward, done, info
         
         else:
-            reward = 0
+            reward = reward #0
             done = False
             info = {'player': player, 'is_legal':True, 'status':'in_progress'}
             if update_env:
@@ -524,7 +526,8 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             return jax.random.choice(key, legal_actions_indices)
         else:
             probs = policy_net.apply(params, nn_state, legal_actions_mask)
-            action = jax.random.categorical(key, probs)
+            #action = jax.random.categorical(key, probs)
+            action = jax.random.choice(key, a=self.num_actions, p=probs)
             return action
         
     def constrained_deterministic_select_action(self, nn_state, policy_net, params, legal_actions_mask, key, epsilon):
@@ -594,6 +597,9 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         attacker_wins = False
         defender_oob = False
 
+        defender_no_legal_moves = False
+        attacker_no_legal_moves = False
+
 
         state = self.state
         #state = self.reset()
@@ -638,48 +644,90 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                         nn_state = self.encode_helper(state)
                         actions[player].append(action)
                         rewards[player].append(reward)
-                    else:
+                    else: #case where a player has no legal moves
                         done = True
                         if player == 'defender': 
-                            attacker_wins = True
-                            wins['attacker'] = 1
+                            defender_no_legal_moves = True
                         elif player == 'attacker': 
-                            defender_wins = True
-                            wins['defender'] = 1
+                            attacker_no_legal_moves = True
+
+                            
                             
 
 
-
-                
-
-                
-
-                if done and player == 'defender' and info['is_legal'] == True: #only attacker can end the game, iterate one more time
-                    defender_wins = True
-                    wins['defender'] = 1
-
-                if (defender_wins and player == 'attacker'): #overwrite the attacker's last reward
-                    rewards['attacker'][-1] = -1
-                    done = True
-                    break
-
-                if done and player == 'defender' and info['is_legal'] == False: #only attacker can end the game, iterate one more time
-                    defender_oob = True
-
-                if (defender_oob and player == 'attacker'): #overwrite the attacker's last reward
-                    rewards['attacker'][-1] = 1
-                    done = True
-                    wins['attacker'] = 1
-                    break
-
-                if (done and player == 'attacker'): #break if attacker wins, game is over
-                    if info['is_legal']:
+                if player == 'attacker' and done:
+                    if info['status'] == 'goal_reached':
                         attacker_wins = True
                         wins['attacker'] = 1
-                    elif not info['is_legal']:
+                    if info['status'] == 'attacker collided with defender':
                         defender_wins = True
                         wins['defender'] = 1
+                    if info['status'] == 'out_of_bounds':
+                        defender_wins = True
+                        wins['defender'] = 1
+                    if attacker_no_legal_moves:
+                        defender_wins = True
+                        wins['defender'] = 1
+                        rewards['attacker'][-1] = -1
                     break
+
+                if player == 'defender' and done:
+                    rewards['attacker'] = rewards['attacker'][:-1]
+                    actions['attacker'] = actions['attacker'][:-1]
+                    if defender_no_legal_moves:
+                        #attacker_wins = True
+                        #wins['attacker'] = 1
+                        #rewards['attacker'][-1] = 1
+                        pass
+                    if info['status'] == 'defender collided with attacker':
+                        #defender_wins = True
+                        #wins['defender'] = 1
+                        #rewards['attacker'][-1] = -1
+                        pass
+                    break
+
+                if step == self.max_steps - 1:
+                    done = True
+                    defender_wins = True
+                    wins['defender'] = 1
+                    rewards['attacker'][-1] = -1
+                    break
+
+
+                
+
+                
+
+                # if done and player == 'defender' and info['is_legal'] == True: #only attacker can end the game, iterate one more time
+                #     defender_wins = True
+                #     wins['defender'] = 1
+
+                # if (defender_wins and player == 'attacker'): #overwrite the attacker's last reward
+                #     rewards['attacker'][-1] = -1
+                #     done = True
+                #     break
+
+                # if done and player == 'defender' and info['is_legal'] == False: #only attacker can end the game, iterate one more time
+                #     defender_oob = True
+
+                # if (defender_oob and player == 'attacker'): #overwrite the attacker's last reward
+                #     rewards['attacker'][-1] = 1
+                #     done = True
+                #     wins['attacker'] = 1
+                #     break
+
+                # if (done and player == 'attacker'): #break if attacker wins, game is over
+                #     if info['is_legal']:
+                #         attacker_wins = True
+                #         wins['attacker'] = 1
+                #     elif not info['is_legal']:
+                #         defender_wins = True
+                #         wins['defender'] = 1
+                #     break
+                
+                
+                
+                
                 if render:
                     self.render()
 

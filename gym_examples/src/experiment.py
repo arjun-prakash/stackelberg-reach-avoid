@@ -426,7 +426,7 @@ def parallel_stackelberg_reinforce(
         params, observations, actions, action_masks, returns, padding_mask
     ):
         action_probabilities = policy_net.apply(params, observations, action_masks)
-        action_probabilities = jax.nn.softmax(action_probabilities)
+        #action_probabilities = jax.nn.softmax(action_probabilities)
         log_probs = jnp.log(jnp.take_along_axis(
                 action_probabilities + 10e-6, actions[..., None], axis=-1
             )
@@ -441,7 +441,7 @@ def parallel_stackelberg_reinforce(
         params, observations, actions, action_masks, returns, padding_mask
     ):
         action_probabilities = policy_net.apply(params, observations, action_masks)
-        action_probabilities = jax.nn.softmax(action_probabilities)
+        #action_probabilities = jax.nn.softmax(action_probabilities)
         log_probs = jnp.log(jnp.take_along_axis(
                 action_probabilities + 10e-6, actions[..., None], axis=-1
             )
@@ -623,18 +623,17 @@ def parallel_stackelberg_reinforce(
                 hk.Linear(100),
                 jax.nn.relu,
                 hk.Linear(env.num_actions),
-                #jax.nn.softmax,
+                jax.nn.softmax,
             ]
         )
         # legal_moves = legal_moves[..., None]
 
         logits = net(observation)
-        # legal_moves = jnp.broadcast_to(legal_moves, logits.shape)  # Broadcast to the shape of logits
 
-        # masked_logits = jnp.multiply(logits, legal_moves)
-        masked_logits = jnp.where(legal_moves, logits, -1e8)
+        #masked_logits = jnp.where(legal_moves, logits, -1e8)
+        masked_logits = jnp.where(legal_moves, logits, 1e-8)
 
-        # probabilities = jax.nn.softmax(masked_logits)
+
         return masked_logits
 
     ############################
@@ -752,9 +751,12 @@ def parallel_stackelberg_reinforce(
             # bellman_error = calc_bellman_error(env, params, policy_net, num_eval_episodes, jax.random.PRNGKey(episode), epsilon, gamma)
             # print('bellman_error', bellman_error)
             # writer.add_scalar('bellman_error', bellman_error, episode)
-            training_player = env.players[
-                (env.players.index(training_player) + 1) % len(env.players)
-            ]  # switch trining plauyer
+            # training_player = env.players[
+            #     (env.players.index(training_player) + 1) % len(env.players)
+            # ]  # switch trining player
+            training_player = 'defender' 
+        else:
+            training_player = 'attacker'
 
         if (episode + 1) % batch_multiple == 0 and valid:
             print("training", training_player)

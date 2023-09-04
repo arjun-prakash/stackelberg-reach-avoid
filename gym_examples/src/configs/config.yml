@@ -7,7 +7,7 @@ env:
   reward: 1
   max_steps: 50
   init_defender_position: [0.,0., 0.]
-  init_attacker_position: [3.,3.,0.]
+  init_attacker_position: [3.,3.,4.712]
   goal_position: [0,0]
   goal_radius: 1.0
   capture_radius: 0.5
@@ -18,7 +18,7 @@ env:
   
 
 hyperparameters:
-  learning_rate: 0.0001
+  learning_rate: 0.001
   gamma: 0.95
   epsilon_start: 0.001
   epsilon_end: 0.001
@@ -27,11 +27,12 @@ hyperparameters:
 training:
   batch_multiple: 1
   num_parallel: 32
-  num_episodes: 3000
+  num_episodes: 20000
   loaded_params: null
+  
 
 eval:
-  eval_interval: 128
+  eval_interval: 64
   num_eval_episodes: 128
 
 #these are hard coded!
