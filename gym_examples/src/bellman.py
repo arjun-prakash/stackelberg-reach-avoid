@@ -158,7 +158,7 @@ def calc_bellman_error(env, params, policy_net, num_rollouts, key, epsilon, gamm
         )
         q_vector.append(q)
 
-    return np.linalg.norm(np.array(q_vector) - np.array(v_vector))
+    return np.array(q_vector), np.array(v_vector)#np.linalg.norm(np.array(q_vector) - np.array(v_vector))
 
 
 def parallel_nash_reinforce(
@@ -250,7 +250,7 @@ def parallel_stackelberg_reinforce(
                 hk.Linear(100),
                 jax.nn.relu,
                 hk.Linear(100),
-                jax.nn.leaky_relu,
+                jax.nn.relu,
                 hk.Linear(100),
                 jax.nn.relu,
                 hk.Linear(env.num_actions),
@@ -263,7 +263,7 @@ def parallel_stackelberg_reinforce(
         # legal_moves = jnp.broadcast_to(legal_moves, logits.shape)  # Broadcast to the shape of logits
 
         # masked_logits = jnp.multiply(logits, legal_moves)
-        masked_logits = jnp.where(legal_moves, logits, -1e9)
+        masked_logits = jnp.where(legal_moves, logits, 1e-8)
 
         # probabilities = jax.nn.softmax(masked_logits)
         return masked_logits
@@ -277,9 +277,26 @@ def parallel_stackelberg_reinforce(
         with open(file, 'rb') as handle:
             loaded_params = pickle.load(handle)
             episode = int(file.split('_episode_')[1].split('_params')[0])
-            bellman_error = calc_bellman_error(env, loaded_params, policy_net, num_eval_episodes, jax.random.PRNGKey(episode), epsilon_start, gamma)
-            print('bellman_error', bellman_error)
-            writer.add_scalar('bellman_error', bellman_error, episode)
+            q,v = calc_bellman_error(env, loaded_params, policy_net, num_eval_episodes, jax.random.PRNGKey(episode), epsilon_start, gamma)
+            q_norm = np.linalg.norm(q)
+            v_norm = np.linalg.norm(v)
+            bellman_error = np.linalg.norm(q-v)
+            print('q:', q)
+            print('v:', v)
+            print('bellman_error:', bellman_error)
+            # writer.add_scalar('q_norm', q_norm, episode)
+            # writer.add_scalar('v_norm', v_norm, episode)
+            # writer.add_scalar('bellman_error', bellman_error, episode)
+
+            writer.add_scalars(
+                "values",
+                {
+                    "q_norm": q_norm,
+                    "v_norm": v_norm,
+                    "bellman": bellman_error,
+                },
+                episode,
+            )   
 
 
       
@@ -355,9 +372,10 @@ if __name__ == "__main__":
     # Get a list of all files in the directory
     #files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_nash/2023-08-24 15:30:06.415206_episode_*_params.pickle')
     #files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-08-23 13:33:43.910321_episode_*_params.pickle')
-    files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-09-01 09:50:40.796960_episode_*_params.pickle')
+    files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-09-05 14:51:09.618824_episode_*_params.pickle')
 
     files.sort(key=lambda x: int(x.split('_episode_')[1].split('_params')[0]))
+    files = files[::10]
     print(files)
 
     # Now params_list contains the parameters from all episodes

@@ -128,7 +128,8 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         #reward = np.exp(-dist_goal)
         max_distance = np.sqrt(self.size**2 + self.size**2)
 
-        reward = -((dist_goal - self.goal_radius)**2)/max_distance
+        reward = 1/(dist_goal**2)
+        #reward = -(dist_goal**2)
 
 
 
@@ -153,7 +154,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             out_of_bounds = True
 
         if out_of_bounds:
-            reward = -1
+            reward = reward
             done = True
             info = {'player': player, 'is_legal':False, 'status':'out_of_bounds'}
 
@@ -181,12 +182,12 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                 info = {'player': player, 'is_legal':False, 'status':'attacker collided with defender'}
                 done = True
                 next_state = state.copy()
-                reward = -1
+                reward = reward #0
 
             else: #defender eats attacker
                 info = {'player': player, 'is_legal':True, 'status':'defender collided with attacker'}
                 done = True
-                reward = 0 #-1
+                reward = reward #0 #-1
 
 
             if update_env:
@@ -195,7 +196,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             return next_state, reward, done, info
        
         if dist_goal < self.goal_radius:
-            reward = 1
+            reward = reward #1
             done = True
             info = {'player': player, 'is_legal':True, 'status':'goal_reached'}
 
@@ -668,7 +669,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                     if attacker_no_legal_moves:
                         defender_wins = True
                         wins['defender'] = 1
-                        rewards['attacker'][-1] = -1
+                        #rewards['attacker'][-1] = -1
                     break
 
                 if player == 'defender' and done:
@@ -686,12 +687,12 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                         pass
                     break
 
-                if step == self.max_steps - 1:
-                    done = True
-                    defender_wins = True
-                    wins['defender'] = 1
-                    rewards['attacker'][-1] = -1
-                    break
+                # if step == self.max_steps - 1:
+                #     done = True
+                #     defender_wins = True
+                #     wins['defender'] = 1
+                #     rewards['attacker'][-1] = -1
+                #     break
 
 
                 

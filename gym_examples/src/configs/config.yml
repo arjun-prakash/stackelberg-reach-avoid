@@ -14,7 +14,8 @@ env:
   timestep: 1
   velocity: 0.25
   turning_angle: 65
-  reward_type: "sparse"
+  reward_type: "dense"
+  training_method: "imbalanced"
   
 
 hyperparameters:
