@@ -129,7 +129,7 @@ def calc_bellman_error(env, params, policy_net, num_rollouts, key, epsilon, gamm
     x_a = np.linspace(-2, 2, 4)
     y_a = np.linspace(2, 2, 1)
     theta_a = np.linspace(0, 0, 1)
-    x_d = np.linspace(0, 0, 1)
+    x_d = np.linspace(-1, 1, 2)
     y_d = np.linspace(0, 0, 1)
     theta_d = np.linspace(0, 0, 1)
 
@@ -372,10 +372,10 @@ if __name__ == "__main__":
     # Get a list of all files in the directory
     #files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_nash/2023-08-24 15:30:06.415206_episode_*_params.pickle')
     #files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-08-23 13:33:43.910321_episode_*_params.pickle')
-    files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-09-05 14:51:09.618824_episode_*_params.pickle')
+    files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-09-11 13:26:38.127129_episode_*_params.pickle')
 
     files.sort(key=lambda x: int(x.split('_episode_')[1].split('_params')[0]))
-    files = files[::10]
+    files = files[::2]
     print(files)
 
     # Now params_list contains the parameters from all episodes

@@ -10,12 +10,12 @@ env:
   init_attacker_position: [3.,3.,4.712]
   goal_position: [0,0]
   goal_radius: 1.0
-  capture_radius: 0.5
+  capture_radius: 0.25
   timestep: 1
   velocity: 0.25
   turning_angle: 65
-  reward_type: "dense"
-  training_method: "imbalanced"
+  reward_type: "-distance"
+  training_method: "imbalanced, mixed attacker"
   
 
 hyperparameters:
@@ -28,7 +28,7 @@ hyperparameters:
 training:
   batch_multiple: 1
   num_parallel: 32
-  num_episodes: 20000
+  num_episodes: 5000
   loaded_params: null
   
 

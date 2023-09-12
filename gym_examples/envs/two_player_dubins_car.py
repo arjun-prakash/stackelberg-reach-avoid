@@ -128,8 +128,8 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         #reward = np.exp(-dist_goal)
         max_distance = np.sqrt(self.size**2 + self.size**2)
 
-        reward = 1/(dist_goal**2)
-        #reward = -(dist_goal**2)
+        #reward = 1/(dist_goal**2)
+        reward = -((dist_goal - self.goal_radius)**2)/ max_distance**2
 
 
 
@@ -147,17 +147,24 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         out_of_bounds = False
 
+        # Check x-boundary
         if next_state[player][0] <= self.observation_space[player].low[0] or next_state[player][0] >= self.observation_space[player].high[0]:
             out_of_bounds = True
+            next_state[player][2] = (np.pi + next_state[player][2]) % (2 * np.pi)
 
+        # Check y-boundary
         if next_state[player][1] <= self.observation_space[player].low[1] or next_state[player][1] >= self.observation_space[player].high[1]:
             out_of_bounds = True
+            next_state[player][2] = (np.pi + next_state[player][2]) % (2 * np.pi)
 
         if out_of_bounds:
-            reward = reward
-            done = True
-            info = {'player': player, 'is_legal':False, 'status':'out_of_bounds'}
-
+            reward = reward#0
+            next_state[player][0] = state[player][0]
+            next_state[player][1] = state[player][1]
+            done = False
+            info = {'player': player, 'is_legal':True, 'status':'out_of_bounds'}
+            # print('oob')
+            # print(self.state)
             if update_env:
                 self.state = next_state
 
@@ -196,7 +203,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             return next_state, reward, done, info
        
         if dist_goal < self.goal_radius:
-            reward = reward #1
+            reward = reward
             done = True
             info = {'player': player, 'is_legal':True, 'status':'goal_reached'}
 
@@ -637,7 +644,9 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                         if player == 'defender':
                             action = self.constrained_select_action(nn_state, policy_net, params[player], legal_actions_mask, subkey, epsilon)
                         elif player == 'attacker':
-                            action = self.constrained_deterministic_select_action(nn_state, policy_net, params[player], legal_actions_mask, subkey, epsilon)
+                            action = self.constrained_select_action(nn_state, policy_net, params[player], legal_actions_mask, subkey, epsilon)
+
+                            #action = self.constrained_deterministic_select_action(nn_state, policy_net, params[player], legal_actions_mask, subkey, epsilon)
                         #action = self.constrained_select_action(nn_state, policy_net, params[player], legal_actions_mask, subkey, epsilon)
 
                         action_masks[player].append(legal_actions_mask)
