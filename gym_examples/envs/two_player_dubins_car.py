@@ -181,26 +181,30 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
 
       
-        
-        if dist_capture < self.capture_radius:
-
-
-            if player == 'attacker':
+        if player == 'attacker':
+            if dist_capture < self.capture_radius+2*self.v_max:
                 info = {'player': player, 'is_legal':False, 'status':'attacker collided with defender'}
-                done = True
+                done = False #should it be false?
                 next_state = state.copy()
                 reward = reward #0
 
-            else: #defender eats attacker
+                if update_env:
+                    self.state = next_state
+
+                return next_state, reward, done, info
+
+        elif player == 'defender':
+            if dist_capture < self.capture_radius:
                 info = {'player': player, 'is_legal':True, 'status':'defender collided with attacker'}
                 done = True
                 reward = reward #0 #-1
+                #next_state = state.copy()
 
 
-            if update_env:
-                self.state = next_state
+                if update_env:
+                    self.state = next_state
 
-            return next_state, reward, done, info
+                return next_state, reward, done, info
        
         if dist_goal < self.goal_radius:
             reward = reward
@@ -341,6 +345,8 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         attacker = plt.Circle((self.state['attacker'][0], self.state['attacker'][1]), 0.1, color='b', fill=True)
         defender = plt.Circle((self.state['defender'][0], self.state['defender'][1]), self.capture_radius, color='r', fill=True)
+        defender_capture_radius = plt.Circle((self.state['defender'][0], self.state['defender'][1]), self.capture_radius+2*self.v_max, color='r', fill=False, linestyle='--')
+
 
 
         # draw goal
@@ -350,6 +356,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         plt.gca().add_artist(attacker)
         plt.gca().add_artist(defender)
         plt.gca().add_artist(goal)
+        plt.gca().add_artist(defender_capture_radius)
 
         
 

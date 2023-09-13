@@ -13,9 +13,10 @@ env:
   capture_radius: 0.25
   timestep: 1
   velocity: 0.25
-  turning_angle: 65
+  turning_angle: 90
   reward_type: "-distance"
-  training_method: "imbalanced, mixed attacker"
+  training_method: "defender trains 4x, mixed attacker"
+  note: "v_max added to capture radius"
   
 
 hyperparameters:

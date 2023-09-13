@@ -364,7 +364,7 @@ if __name__ == "__main__":
 
     # Logging
     print(game_type, " starting experiment at :", timestamp)
-    writer = SummaryWriter(f"runs2/experiment_{game_type}" + timestamp+"_bellman_error_fix")
+    writer = SummaryWriter(f"runs3/experiment_{game_type}" + timestamp+"_bellman_error_fix")
 
     import glob
     import pickle
