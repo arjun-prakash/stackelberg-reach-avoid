@@ -258,7 +258,7 @@ def parallel_nash_reinforce(
 
     # Define the optimizer
     agent_optimizer = optax.chain(
-        optax.radam(learning_rate=learning_rate), 
+        optax.radam(learning_rate=learning_rate, b1=.999, b2=.999), 
     )
     optimizer = {player: agent_optimizer for player in env.players}
     opt_state = {
@@ -754,15 +754,15 @@ def parallel_stackelberg_reinforce(
             # print('bellman_error', bellman_error)
             # writer.add_scalar('bellman_error', bellman_error, episode)
             
-            if training_counter % 4 == 0:
-                training_player = 'attacker'
-            else:
-                training_player = 'defender'
-            training_counter += 1
-        #     training_player = env.players[
-        #         (env.players.index(training_player) + 1) % len(env.players)
-        #     ]  # switch trining player
-        # #     training_player = 'defender' 
+            # if training_counter % 4 == 0:
+            #     training_player = 'attacker'
+            # else:
+            #     training_player = 'defender'
+            # training_counter += 1
+            training_player = env.players[
+                (env.players.index(training_player) + 1) % len(env.players)
+            ]  # switch trining player
+        #     training_player = 'defender' 
         # else:
         #     training_player = 'attacker'
 

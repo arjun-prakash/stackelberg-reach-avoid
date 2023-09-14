@@ -182,7 +182,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
       
         if player == 'attacker':
-            if dist_capture < self.capture_radius+2*self.v_max:
+            if dist_capture < self.capture_radius:
                 info = {'player': player, 'is_legal':False, 'status':'attacker collided with defender'}
                 done = False #should it be false?
                 next_state = state.copy()
@@ -196,7 +196,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         elif player == 'defender':
             if dist_capture < self.capture_radius:
                 info = {'player': player, 'is_legal':True, 'status':'defender collided with attacker'}
-                done = True
+                done = False #True
                 reward = reward #0 #-1
                 #next_state = state.copy()
 
@@ -344,8 +344,8 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
     
 
         attacker = plt.Circle((self.state['attacker'][0], self.state['attacker'][1]), 0.1, color='b', fill=True)
-        defender = plt.Circle((self.state['defender'][0], self.state['defender'][1]), self.capture_radius, color='r', fill=True)
-        defender_capture_radius = plt.Circle((self.state['defender'][0], self.state['defender'][1]), self.capture_radius+2*self.v_max, color='r', fill=False, linestyle='--')
+        #defender = plt.Circle((self.state['defender'][0], self.state['defender'][1]), self.capture_radius, color='r', fill=True)
+        defender_capture_radius = plt.Circle((self.state['defender'][0], self.state['defender'][1]), self.capture_radius, color='r', fill=False, linestyle='--')
 
 
 
@@ -354,7 +354,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         # draw obstacle
         plt.gca().add_artist(attacker)
-        plt.gca().add_artist(defender)
+        #plt.gca().add_artist(defender)
         plt.gca().add_artist(goal)
         plt.gca().add_artist(defender_capture_radius)
 
@@ -685,7 +685,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                     if attacker_no_legal_moves:
                         defender_wins = True
                         wins['defender'] = 1
-                        #rewards['attacker'][-1] = -1
+                        rewards['attacker'][-1] = -10
                     break
 
                 if player == 'defender' and done:
