@@ -228,13 +228,13 @@ def parallel_nash_reinforce(
         net = hk.Sequential(
             [
                 hk.Linear(100),
-                jax.nn.relu,
+                jax.nn.leaky_relu,
                 hk.Linear(100),
-                jax.nn.relu,
+                jax.nn.leaky_relu,
                 hk.Linear(100),
-                jax.nn.relu,
+                jax.nn.leaky_relu,
                 hk.Linear(100),
-                jax.nn.relu,
+                jax.nn.leaky_relu,
                 hk.Linear(env.num_actions),
                 jax.nn.softmax,
             ]
@@ -258,7 +258,7 @@ def parallel_nash_reinforce(
 
     # Define the optimizer
     agent_optimizer = optax.chain(
-        optax.radam(learning_rate=learning_rate, b1=.999, b2=.999), 
+        optax.radam(learning_rate=learning_rate), 
     )
     optimizer = {player: agent_optimizer for player in env.players}
     opt_state = {
@@ -615,13 +615,13 @@ def parallel_stackelberg_reinforce(
         net = hk.Sequential(
             [
                 hk.Linear(100),
-                jax.nn.relu,
+                jax.nn.leaky_relu,
                 hk.Linear(100),
-                jax.nn.relu,
+                jax.nn.leaky_relu,
                 hk.Linear(100),
-                jax.nn.relu,
+                jax.nn.leaky_relu,
                 hk.Linear(100),
-                jax.nn.relu,
+                jax.nn.leaky_relu,
                 hk.Linear(env.num_actions),
                 jax.nn.softmax,
             ]
@@ -658,7 +658,7 @@ def parallel_stackelberg_reinforce(
 
     # Define the optimizer
     agent_optimizer = optax.chain(
-        optax.radam(learning_rate=learning_rate), 
+        optax.radam(learning_rate=learning_rate, b1=.9, b2=.9),
     )
     optimizer = {player: agent_optimizer for player in env.players}
     opt_state = {
@@ -726,6 +726,8 @@ def parallel_stackelberg_reinforce(
             },
             episode,
         )
+
+        writer.add_scalar('average returns', np.array(np.mean(batch_returns['attacker'])), episode)
 
         if episode % eval_interval == 0:
             (
@@ -895,7 +897,10 @@ if __name__ == "__main__":
 
     # Logging
     print(game_type, " starting experiment at :", timestamp)
-    writer = SummaryWriter(f"runs3/experiment_{game_type}" + timestamp+"_drawless")
+    writer = SummaryWriter(f"runs4/experiment_{game_type}" + timestamp+"_drawless")
+    #Load data (deserialize)
+    # with open('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-09-15 10:22:44.481035_episode_12224_params.pickle', 'rb') as handle:
+    #     loaded_params = pickle.load(handle)
 
     # Training
     if game_type == "nash":

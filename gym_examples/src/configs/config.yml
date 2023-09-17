@@ -6,21 +6,21 @@ env:
   board_size: 4
   reward: 1
   max_steps: 50
-  init_defender_position: [1.,1., 0.]
-  init_attacker_position: [3.,3.,4.712]
-  goal_position: [0,0]
+  init_defender_position: [-3.5,0.,4.712]
+  init_attacker_position: [0.,3.5, 0.] 
+  goal_position: [0,-4]
   goal_radius: 1.0
   capture_radius: 0.5
   timestep: 1
   velocity: 0.25
-  turning_angle: 90
-  reward_type: "-distance"
+  turning_angle: 65
+  reward_type: "-soarse"
   training_method: "balanced, mixed attacker"
-  note: "soft radius, penalised illegal moves. Non stationary adam"
+  note: "soft radius, penalised illegal moves."
   
 
 hyperparameters:
-  learning_rate: 0.0001
+  learning_rate: 0.001
   gamma: 0.95
   epsilon_start: 0.001
   epsilon_end: 0.001
@@ -29,8 +29,8 @@ hyperparameters:
 training:
   batch_multiple: 1
   num_parallel: 32
-  num_episodes: 20000
-  loaded_params: null
+  num_episodes: 5000
+  loaded_params: None
   
 
 eval:
@@ -40,11 +40,11 @@ eval:
 #these are hard coded!
 architecture:
   optimizer:
-    optimizer: radam
+    optimizer: radam betas .9 
   network:
     type: "mlp"
     hidden_layers: [100, 100, 100, 100]
-    activation: "relu"
+    activation: "leaky_relu"
     output_activation: "linear"
 
 

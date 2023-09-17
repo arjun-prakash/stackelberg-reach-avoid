@@ -129,7 +129,9 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         max_distance = np.sqrt(self.size**2 + self.size**2)
 
         #reward = 1/(dist_goal**2)
+        #reward = -((dist_goal - self.goal_radius)**2)/ max_distance**2
         reward = -((dist_goal - self.goal_radius)**2)/ max_distance**2
+
 
 
 
@@ -158,11 +160,16 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             next_state[player][2] = (np.pi + next_state[player][2]) % (2 * np.pi)
 
         if out_of_bounds:
-            reward = reward#0
+            reward = 0
             next_state[player][0] = state[player][0]
             next_state[player][1] = state[player][1]
             done = False
-            info = {'player': player, 'is_legal':True, 'status':'out_of_bounds'}
+            if player == 'attacker':
+                is_legal = False
+            else:
+                is_legal = True
+
+            info = {'player': player, 'is_legal':is_legal, 'status':'out_of_bounds'}
             # print('oob')
             # print(self.state)
             if update_env:
@@ -186,7 +193,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                 info = {'player': player, 'is_legal':False, 'status':'attacker collided with defender'}
                 done = False #should it be false?
                 next_state = state.copy()
-                reward = reward #0
+                reward = 0 #reward #0
 
                 if update_env:
                     self.state = next_state
@@ -197,7 +204,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             if dist_capture < self.capture_radius:
                 info = {'player': player, 'is_legal':True, 'status':'defender collided with attacker'}
                 done = False #True
-                reward = reward #0 #-1
+                reward = 0 #-1
                 #next_state = state.copy()
 
 
@@ -207,7 +214,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                 return next_state, reward, done, info
        
         if dist_goal < self.goal_radius:
-            reward = reward
+            reward = 1 #reward
             done = True
             info = {'player': player, 'is_legal':True, 'status':'goal_reached'}
 
@@ -217,7 +224,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             return next_state, reward, done, info
         
         else:
-            reward = reward #0
+            reward = 0
             done = False
             info = {'player': player, 'is_legal':True, 'status':'in_progress'}
             if update_env:
@@ -685,7 +692,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                     if attacker_no_legal_moves:
                         defender_wins = True
                         wins['defender'] = 1
-                        rewards['attacker'][-1] = -10
+                        rewards['attacker'][-1] = -1
                     break
 
                 if player == 'defender' and done:
@@ -694,7 +701,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                     if defender_no_legal_moves:
                         #attacker_wins = True
                         #wins['attacker'] = 1
-                        #rewards['attacker'][-1] = 1
+                        #rewards['attacker'][-1] =  -1#-20
                         pass
                     if info['status'] == 'defender collided with attacker':
                         #defender_wins = True
