@@ -757,12 +757,17 @@ def parallel_stackelberg_reinforce(
             # else:
             #     training_player = 'defender'
             # training_counter += 1
-            training_player = env.players[
-                (env.players.index(training_player) + 1) % len(env.players)
-            ]  # switch trining player
+            # training_player = env.players[
+            #     (env.players.index(training_player) + 1) % len(env.players)
+            # ]  # switch trining player
         #     training_player = 'defender' 
         # else:
         #     training_player = 'attacker'
+
+        if episode % 4 == 0:
+            training_player = 'defender'
+        else:
+            training_player = 'attacker'
 
         if (episode + 1) % batch_multiple == 0 and valid:
             print("training", training_player)

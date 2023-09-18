@@ -15,7 +15,7 @@ env:
   velocity: 0.25
   turning_angle: 65
   reward_type: "-soarse"
-  training_method: "balanced, mixed attacker"
+  training_method: "unbalanced (every 3 attacker, 1 defender), mixed attacker"
   note: "soft radius, penalised illegal moves."
   
 
@@ -29,7 +29,7 @@ hyperparameters:
 training:
   batch_multiple: 1
   num_parallel: 32
-  num_episodes: 5000
+  num_episodes: 20000
   loaded_params: None
   
 
