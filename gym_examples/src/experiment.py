@@ -614,14 +614,10 @@ def parallel_stackelberg_reinforce(
     def policy_network(observation, legal_moves):
         net = hk.Sequential(
             [
-                hk.Linear(100),
-                jax.nn.leaky_relu,
-                hk.Linear(100),
-                jax.nn.leaky_relu,
-                hk.Linear(100),
-                jax.nn.leaky_relu,
-                hk.Linear(100),
-                jax.nn.leaky_relu,
+                hk.Linear(64),
+                jax.nn.relu,
+                hk.Linear(64),
+                jax.nn.relu,
                 hk.Linear(env.num_actions),
                 jax.nn.softmax,
             ]

@@ -34,7 +34,7 @@ training:
   
 
 eval:
-  eval_interval: 64
+  eval_interval: 128
   num_eval_episodes: 128
 
 #these are hard coded!
@@ -43,8 +43,8 @@ architecture:
     optimizer: radam betas .9 
   network:
     type: "mlp"
-    hidden_layers: [100, 100, 100, 100]
-    activation: "leaky_relu"
+    hidden_layers: [64, 64]
+    activation: "relu"
     output_activation: "linear"
 
 
