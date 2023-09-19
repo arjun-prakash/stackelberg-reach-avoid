@@ -6,22 +6,22 @@ env:
   board_size: 4
   reward: 1
   max_steps: 50
-  init_defender_position: [-3.5,0.,4.712]
+  init_defender_position: [0.,-1,4.712]
   init_attacker_position: [0.,3.5, 0.] 
   goal_position: [0,-4]
   goal_radius: 1.0
-  capture_radius: 0.5
+  capture_radius: 0.25
   timestep: 1
   velocity: 0.25
   turning_angle: 65
-  reward_type: "-soarse"
+  reward_type: "-dense"
   training_method: "unbalanced (every 3 attacker, 1 defender), mixed attacker"
   note: "soft radius, penalised illegal moves."
   
 
 hyperparameters:
   learning_rate: 0.001
-  gamma: 0.95
+  gamma: 0.99
   epsilon_start: 0.001
   epsilon_end: 0.001
   epsilon_decay: 1
@@ -29,7 +29,7 @@ hyperparameters:
 training:
   batch_multiple: 1
   num_parallel: 32
-  num_episodes: 20000
+  num_episodes: 2000
   loaded_params: None
   
 

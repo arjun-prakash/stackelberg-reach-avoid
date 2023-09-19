@@ -130,8 +130,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         #reward = 1/(dist_goal**2)
         #reward = -((dist_goal - self.goal_radius)**2)/ max_distance**2
-        reward = -((dist_goal - self.goal_radius)**2)/ max_distance**2
-
+        reward = -((dist_goal - self.goal_radius)**2)
 
 
 
@@ -160,12 +159,12 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             next_state[player][2] = (np.pi + next_state[player][2]) % (2 * np.pi)
 
         if out_of_bounds:
-            reward = 0
+            reward = reward
             next_state[player][0] = state[player][0]
             next_state[player][1] = state[player][1]
             done = False
             if player == 'attacker':
-                is_legal = False
+                is_legal = True
             else:
                 is_legal = True
 
@@ -189,11 +188,11 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
       
         if player == 'attacker':
-            if dist_capture < self.capture_radius:
+            if dist_capture < self.capture_radius+self.v_max:
                 info = {'player': player, 'is_legal':False, 'status':'attacker collided with defender'}
                 done = False #should it be false?
                 next_state = state.copy()
-                reward = 0 #reward #0
+                reward = reward #0
 
                 if update_env:
                     self.state = next_state
@@ -204,7 +203,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             if dist_capture < self.capture_radius:
                 info = {'player': player, 'is_legal':True, 'status':'defender collided with attacker'}
                 done = False #True
-                reward = 0 #-1
+                reward = reward
                 #next_state = state.copy()
 
 
@@ -214,7 +213,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                 return next_state, reward, done, info
        
         if dist_goal < self.goal_radius:
-            reward = 1 #reward
+            reward = 100 #reward
             done = True
             info = {'player': player, 'is_legal':True, 'status':'goal_reached'}
 
@@ -224,7 +223,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             return next_state, reward, done, info
         
         else:
-            reward = 0
+            reward = reward
             done = False
             info = {'player': player, 'is_legal':True, 'status':'in_progress'}
             if update_env:
@@ -351,8 +350,8 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
     
 
         attacker = plt.Circle((self.state['attacker'][0], self.state['attacker'][1]), 0.1, color='b', fill=True)
-        #defender = plt.Circle((self.state['defender'][0], self.state['defender'][1]), self.capture_radius, color='r', fill=True)
-        defender_capture_radius = plt.Circle((self.state['defender'][0], self.state['defender'][1]), self.capture_radius, color='r', fill=False, linestyle='--')
+        defender = plt.Circle((self.state['defender'][0], self.state['defender'][1]), self.capture_radius, color='r', fill=True)
+        defender_capture_radius = plt.Circle((self.state['defender'][0], self.state['defender'][1]), self.capture_radius+self.v_max, color='r', fill=False, linestyle='--')
 
 
 
@@ -361,7 +360,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         # draw obstacle
         plt.gca().add_artist(attacker)
-        #plt.gca().add_artist(defender)
+        plt.gca().add_artist(defender)
         plt.gca().add_artist(goal)
         plt.gca().add_artist(defender_capture_radius)
 
@@ -692,7 +691,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                     if attacker_no_legal_moves:
                         defender_wins = True
                         wins['defender'] = 1
-                        rewards['attacker'][-1] = -1
+                        rewards['attacker'][-1] = -100
                     break
 
                 if player == 'defender' and done:
@@ -701,7 +700,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                     if defender_no_legal_moves:
                         #attacker_wins = True
                         #wins['attacker'] = 1
-                        #rewards['attacker'][-1] =  -1#-20
+                        #rewards['attacker'][-1] = -20
                         pass
                     if info['status'] == 'defender collided with attacker':
                         #defender_wins = True

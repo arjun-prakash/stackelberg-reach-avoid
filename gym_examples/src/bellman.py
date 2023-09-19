@@ -27,6 +27,46 @@ from PIL import Image
 from torch.utils.tensorboard import SummaryWriter
 import yaml
 
+import cvxpy as cp
+
+
+def solve_stackelberg_game(q_values_data):
+    # Convert q_values_data to matrix
+    num_defender_actions = max([entry['defender'] for entry in q_values_data]) + 1
+    num_attacker_actions = max([entry['attacker'] for entry in q_values_data]) + 1
+    Q_matrix = np.zeros((num_attacker_actions, num_defender_actions))
+    for entry in q_values_data:
+        Q_matrix[entry['attacker']][entry['defender']] = entry['q_value']
+    print(Q_matrix)
+    # Variables
+    q = cp.Variable(Q_matrix.shape[1], nonneg=True)  # Defender's strategy
+    z = cp.Variable()  # Worst-case expected payoff for defender
+
+    # Objective: Minimize z (worst-case expected payoff for defender)
+    objective = cp.Minimize(z)
+
+    # Constraints
+    constraints = [
+        cp.sum(q) == 1,  # Defender's strategy should be a valid probability distribution
+        z >= np.min(Q_matrix)  # z should be greater than or equal to the minimum Q-value
+    ]
+    
+    # Expected payoff for each attacker action should be at least z
+    for i in range(num_attacker_actions):
+        constraints.append(Q_matrix[i] @ q <= z)
+
+    # Form and solve the problem
+    prob = cp.Problem(objective, constraints)
+    prob.solve()
+
+    # Extract the optimal strategy for the defender
+    defender_strategy_cvxpy = q.value
+
+
+    return {
+        "Defender's Optimal Strategy": defender_strategy_cvxpy,
+        "Payoff": prob.value
+    }
 
 def parallel_rollouts(
     env,
@@ -122,15 +162,18 @@ def get_q_values(env, params, policy_net, grid_state, num_rollouts, key, epsilon
     best_attacker_moves = np.argmax(q_values, axis=1)
     best_defender_move = np.argmin(np.max(q_values, axis=1))
     best_attacker_move = best_attacker_moves[best_defender_move]
-    q = q_values[best_defender_move][best_attacker_move]
-    return q
+    arg_min_max_q = q_values[best_defender_move][best_attacker_move]
+
+    mixed_q = solve_stackelberg_game(move_list)['Payoff']
+
+    return arg_min_max_q, mixed_q
 
 def calc_bellman_error(env, params, policy_net, num_rollouts, key, epsilon, gamma):
     x_a = np.linspace(-2, 2, 4)
-    y_a = np.linspace(2, 2, 1)
+    y_a = np.linspace(3.5, 3.5, 1)
     theta_a = np.linspace(0, 0, 1)
     x_d = np.linspace(-1, 1, 2)
-    y_d = np.linspace(0, 0, 1)
+    y_d = np.linspace(-1, -1, 1)
     theta_d = np.linspace(0, 0, 1)
 
     xxa, yya, tta, xxd, yyd, ttd = np.meshgrid(x_a, y_a, theta_a, x_d, y_d, theta_d)
@@ -146,19 +189,21 @@ def calc_bellman_error(env, params, policy_net, num_rollouts, key, epsilon, gamm
     ).T
 
     v_vector = []
-    q_vector = []
+    arg_min_max_q_vector = []
+    mixed_q_vector = []
     for g in tqdm(grid):
         v = get_values(
             env, params, policy_net, g, num_rollouts, jax.random.PRNGKey(42), 0.01, 0.95
         )
         v_vector.append(v)
 
-        q = get_q_values(
+        arg_min_max_q, mixed_q = get_q_values(
             env, params, policy_net, g, num_rollouts, jax.random.PRNGKey(42), 0.01, 0.95
         )
-        q_vector.append(q)
+        arg_min_max_q_vector.append(arg_min_max_q)
+        mixed_q_vector.append(mixed_q)
 
-    return np.array(q_vector), np.array(v_vector)#np.linalg.norm(np.array(q_vector) - np.array(v_vector))
+    return np.array(arg_min_max_q_vector), mixed_q_vector ,np.array(v_vector)#np.linalg.norm(np.array(q_vector) - np.array(v_vector))
 
 
 def parallel_nash_reinforce(
@@ -189,13 +234,13 @@ def parallel_nash_reinforce(
         net = hk.Sequential(
             [
                 hk.Linear(100),
-                jax.nn.leaky_relu,
+                jax.nn.relu,
                 hk.Linear(100),
-                jax.nn.leaky_relu,
+                jax.nn.relu,
                 hk.Linear(100),
-                jax.nn.leaky_relu,
+                jax.nn.relu,
                 hk.Linear(100),
-                jax.nn.leaky_relu,
+                jax.nn.relu,
                 hk.Linear(env.num_actions),
                 jax.nn.softmax,
             ]
@@ -245,13 +290,9 @@ def parallel_stackelberg_reinforce(
     def policy_network(observation, legal_moves):
         net = hk.Sequential(
             [
-                hk.Linear(100),
+                hk.Linear(64),
                 jax.nn.relu,
-                hk.Linear(100),
-                jax.nn.relu,
-                hk.Linear(100),
-                jax.nn.relu,
-                hk.Linear(100),
+                hk.Linear(64),
                 jax.nn.relu,
                 hk.Linear(env.num_actions),
                 jax.nn.softmax,
@@ -277,13 +318,16 @@ def parallel_stackelberg_reinforce(
         with open(file, 'rb') as handle:
             loaded_params = pickle.load(handle)
             episode = int(file.split('_episode_')[1].split('_params')[0])
-            q,v = calc_bellman_error(env, loaded_params, policy_net, num_eval_episodes, jax.random.PRNGKey(episode), epsilon_start, gamma)
-            q_norm = np.linalg.norm(q)
+            arg_min_max_q, mixed_q, v = calc_bellman_error(env, loaded_params, policy_net, num_eval_episodes, jax.random.PRNGKey(episode), epsilon_start, gamma)
+            arg_q_norm = np.linalg.norm(arg_min_max_q)
+            mixed_q_norm = np.linalg.norm(mixed_q)
             v_norm = np.linalg.norm(v)
-            bellman_error = np.linalg.norm(q-v)
-            print('q:', q)
+            arg_bellman_error = np.linalg.norm(arg_min_max_q-v)
+            mixed_bellman_error = np.linalg.norm(mixed_q-v)
+            print('argq:', arg_min_max_q)
+            print('mixedq:', mixed_q)
             print('v:', v)
-            print('bellman_error:', bellman_error)
+            #print('bellman_error:', bellman_error)
             # writer.add_scalar('q_norm', q_norm, episode)
             # writer.add_scalar('v_norm', v_norm, episode)
             # writer.add_scalar('bellman_error', bellman_error, episode)
@@ -291,9 +335,11 @@ def parallel_stackelberg_reinforce(
             writer.add_scalars(
                 "values",
                 {
-                    "q_norm": q_norm,
+                    "arg_q_norm": arg_q_norm,
+                    "mixed_q_norm": mixed_q_norm,
                     "v_norm": v_norm,
-                    "bellman": bellman_error,
+                    "arg bellman": arg_bellman_error,
+                    "mixed bellman": mixed_bellman_error,
                 },
                 episode,
             )   
@@ -364,7 +410,7 @@ if __name__ == "__main__":
 
     # Logging
     print(game_type, " starting experiment at :", timestamp)
-    writer = SummaryWriter(f"runs3/experiment_{game_type}" + timestamp+"_bellman_error_fix")
+    writer = SummaryWriter(f"runs4/experiment_{game_type}" + timestamp+"_bellman_error_fix")
 
     import glob
     import pickle
@@ -372,10 +418,10 @@ if __name__ == "__main__":
     # Get a list of all files in the directory
     #files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_nash/2023-08-24 15:30:06.415206_episode_*_params.pickle')
     #files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-08-23 13:33:43.910321_episode_*_params.pickle')
-    files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-09-11 13:26:38.127129_episode_*_params.pickle')
+    files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-09-19 13:25:22.520705_episode_*_params.pickle')
 
     files.sort(key=lambda x: int(x.split('_episode_')[1].split('_params')[0]))
-    files = files[::2]
+    files = files
     print(files)
 
     # Now params_list contains the parameters from all episodes
