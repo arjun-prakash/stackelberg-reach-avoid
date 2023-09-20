@@ -169,12 +169,12 @@ def get_q_values(env, params, policy_net, grid_state, num_rollouts, key, epsilon
     return arg_min_max_q, mixed_q
 
 def calc_bellman_error(env, params, policy_net, num_rollouts, key, epsilon, gamma):
-    x_a = np.linspace(-2, 2, 4)
+    x_a = np.linspace(0., 0., 1)
     y_a = np.linspace(3.5, 3.5, 1)
     theta_a = np.linspace(0, 0, 1)
-    x_d = np.linspace(-1, 1, 2)
+    x_d = np.linspace(0., 0., 1)
     y_d = np.linspace(-1, -1, 1)
-    theta_d = np.linspace(0, 0, 1)
+    theta_d = np.linspace(4.712, 4.712, 1)
 
     xxa, yya, tta, xxd, yyd, ttd = np.meshgrid(x_a, y_a, theta_a, x_d, y_d, theta_d)
     grid = np.vstack(
@@ -418,7 +418,7 @@ if __name__ == "__main__":
     # Get a list of all files in the directory
     #files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_nash/2023-08-24 15:30:06.415206_episode_*_params.pickle')
     #files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-08-23 13:33:43.910321_episode_*_params.pickle')
-    files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-09-19 13:25:22.520705_episode_*_params.pickle')
+    files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-09-19 15:18:57.090737_episode_*_params.pickle')
 
     files.sort(key=lambda x: int(x.split('_episode_')[1].split('_params')[0]))
     files = files

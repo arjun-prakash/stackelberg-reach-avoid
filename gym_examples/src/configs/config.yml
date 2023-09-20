@@ -16,7 +16,7 @@ env:
   turning_angle: 65
   reward_type: "-dense"
   training_method: "unbalanced (every 3 attacker, 1 defender), mixed attacker"
-  note: "soft radius, penalised illegal moves."
+  note: "soft radius, penalised illegal moves. This one has no penalty for getting caught."
   
 
 hyperparameters:
@@ -29,7 +29,7 @@ hyperparameters:
 training:
   batch_multiple: 1
   num_parallel: 32
-  num_episodes: 2000
+  num_episodes: 10000
   loaded_params: None
   
 

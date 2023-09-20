@@ -691,7 +691,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                     if attacker_no_legal_moves:
                         defender_wins = True
                         wins['defender'] = 1
-                        rewards['attacker'][-1] = -100
+                        #rewards['attacker'][-1] = -100
                     break
 
                 if player == 'defender' and done:
