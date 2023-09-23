@@ -78,10 +78,11 @@ def parallel_rollouts(
     gamma,
     render=False,
     for_q_value=False,
+    reward=None,
 ):
     keys = jax.random.split(key, num_rollouts)
     args = [
-        (env.game_type, params, policy_net, k, epsilon, gamma, render, for_q_value)
+        (env.game_type, params, policy_net, k, epsilon, gamma, render, for_q_value, reward)
         for k in keys
     ]
     with ProcessPool() as pool:
@@ -116,7 +117,10 @@ def get_values(env, params, policy_net, grid_state, num_rollouts, key, epsilon, 
             gamma,
             render=False,
             for_q_value=False,
+            reward=None
         )
+        # print('actions')
+        # print(actions)
         attacker_returns = [r["attacker"][0] for r in returns]
         v = np.mean(attacker_returns)
         return v
@@ -145,6 +149,7 @@ def get_q_values(env, params, policy_net, grid_state, num_rollouts, key, epsilon
                 gamma,
                 render=False,
                 for_q_value=True,
+                reward=reward
             )
             attacker_returns = [r["attacker"][0] for r in returns]
             mean_attacker_returns = np.mean(attacker_returns)
@@ -169,12 +174,12 @@ def get_q_values(env, params, policy_net, grid_state, num_rollouts, key, epsilon
     return arg_min_max_q, mixed_q
 
 def calc_bellman_error(env, params, policy_net, num_rollouts, key, epsilon, gamma):
-    x_a = np.linspace(0., 0., 1)
-    y_a = np.linspace(3.5, 3.5, 1)
-    theta_a = np.linspace(0, 0, 1)
+    x_a = np.linspace(0, 0, 1)
+    y_a = np.linspace(3, 1, 3)
+    theta_a = np.linspace(4.712, 4.712, 1)
     x_d = np.linspace(0., 0., 1)
     y_d = np.linspace(-1, -1, 1)
-    theta_d = np.linspace(4.712, 4.712, 1)
+    theta_d = np.linspace(1.571, 1.571, 1)
 
     xxa, yya, tta, xxd, yyd, ttd = np.meshgrid(x_a, y_a, theta_a, x_d, y_d, theta_d)
     grid = np.vstack(
@@ -193,12 +198,12 @@ def calc_bellman_error(env, params, policy_net, num_rollouts, key, epsilon, gamm
     mixed_q_vector = []
     for g in tqdm(grid):
         v = get_values(
-            env, params, policy_net, g, num_rollouts, jax.random.PRNGKey(42), 0.01, 0.95
+            env, params, policy_net, g, num_rollouts, key, epsilon, gamma
         )
         v_vector.append(v)
 
         arg_min_max_q, mixed_q = get_q_values(
-            env, params, policy_net, g, num_rollouts, jax.random.PRNGKey(42), 0.01, 0.95
+            env, params, policy_net, g, num_rollouts, key, epsilon, gamma
         )
         arg_min_max_q_vector.append(arg_min_max_q)
         mixed_q_vector.append(mixed_q)
@@ -327,7 +332,7 @@ def parallel_stackelberg_reinforce(
             print('argq:', arg_min_max_q)
             print('mixedq:', mixed_q)
             print('v:', v)
-            #print('bellman_error:', bellman_error)
+            print('bellman_error:', mixed_bellman_error)
             # writer.add_scalar('q_norm', q_norm, episode)
             # writer.add_scalar('v_norm', v_norm, episode)
             # writer.add_scalar('bellman_error', bellman_error, episode)
@@ -342,7 +347,29 @@ def parallel_stackelberg_reinforce(
                     "mixed bellman": mixed_bellman_error,
                 },
                 episode,
-            )   
+            )
+            # #_ = env.reset()
+            # (
+            #     states,
+            #     actions,
+            #     action_masks,
+            #     returns,
+            #     padding_mask,
+            #     wins,
+            # ) = env.single_rollout(
+            #     [
+            #         'stackelberg',
+            #         loaded_params,
+            #         policy_net,
+            #         jax.random.PRNGKey(42),
+            #         epsilon_start,
+            #         gamma,
+            #         True,
+            #         False,
+            #         None,
+            #     ]
+            # )
+            # env.make_gif(f"gifs/debug/{timestamp}_{episode}.gif")
 
 
       
@@ -416,9 +443,8 @@ if __name__ == "__main__":
     import pickle
 
     # Get a list of all files in the directory
-    #files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_nash/2023-08-24 15:30:06.415206_episode_*_params.pickle')
-    #files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-08-23 13:33:43.910321_episode_*_params.pickle')
-    files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-09-19 15:18:57.090737_episode_*_params.pickle')
+    #files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-09-19 15:18:57.090737_episode_*_params.pickle')
+    files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-09-22 14:24:16.108929_episode_*_params.pickle')
 
     files.sort(key=lambda x: int(x.split('_episode_')[1].split('_params')[0]))
     files = files

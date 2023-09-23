@@ -98,10 +98,11 @@ def parallel_nash_reinforce(
         gamma,
         render=False,
         for_q_value=False,
+        rewards = None
     ):
         keys = jax.random.split(key, num_rollouts)
         args = [
-            ("nash", params, policy_net, k, epsilon, gamma, render, for_q_value)
+            ("nash", params, policy_net, k, epsilon, gamma, render, for_q_value, rewards)
             for k in keys
         ]
         with ProcessPool() as pool:
@@ -227,16 +228,10 @@ def parallel_nash_reinforce(
     def policy_network(observation):
         net = hk.Sequential(
             [
-                hk.Linear(100),
-                jax.nn.leaky_relu,
-                hk.Linear(100),
-                jax.nn.leaky_relu,
-                hk.Linear(100),
-                jax.nn.leaky_relu,
-                hk.Linear(100),
-                jax.nn.leaky_relu,
-                hk.Linear(env.num_actions),
-                jax.nn.softmax,
+                hk.Linear(64),
+                jax.nn.relu,
+                hk.Linear(64),
+                jax.nn.relu,
             ]
         )
         return net(observation)
@@ -258,7 +253,7 @@ def parallel_nash_reinforce(
 
     # Define the optimizer
     agent_optimizer = optax.chain(
-        optax.radam(learning_rate=learning_rate), 
+        optax.radam(learning_rate=learning_rate, b1=0.9, b2=0.9)
     )
     optimizer = {player: agent_optimizer for player in env.players}
     opt_state = {
@@ -486,10 +481,11 @@ def parallel_stackelberg_reinforce(
         gamma,
         render=False,
         for_q_value=False,
+        reward=None
     ):
         keys = jax.random.split(key, num_rollouts)
         args = [
-            ("stackelberg", params, policy_net, k, epsilon, gamma, render, for_q_value)
+            ("stackelberg", params, policy_net, k, epsilon, gamma, render, for_q_value, reward)
             for k in keys
         ]
         with ProcessPool() as pool:
@@ -686,7 +682,7 @@ def parallel_stackelberg_reinforce(
         valid = True
         render = False
 
-        env.reset()
+        env.reset(key)
         states, actions, action_masks, returns, masks, wins = parallel_rollouts(
             env, params, policy_net, num_parallel, key, epsilon, gamma
         )
@@ -743,6 +739,7 @@ def parallel_stackelberg_reinforce(
                     gamma,
                     True,
                     False,
+                    None
                 ]
             )
             env.make_gif(f"gifs/experiment_stackelberg/{timestamp}_{episode}.gif")

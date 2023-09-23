@@ -47,13 +47,20 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         self.positions = {'attacker': [], 'defender': []}
         
 
-    def reset(self):
+    def reset(self, key=None):
         """
         Reset the environment and return the initial state
         """
-        
+        if key is not None: #move attacker lefit or right
+            attacker_position = self.init_attacker_position
+            perturbation = jax.random.choice(key, a=np.array([3,2,1]))
+            attacker_position[1] = perturbation
+            self.state['attacker'] = np.array(attacker_position, dtype=self.observation_space['defender'].dtype)
+        else:
+            self.state['attacker'] = np.array(self.init_attacker_position, dtype=self.observation_space['attacker'].dtype)
+
+
         self.state['defender'] = np.array(self.init_defender_position, dtype=self.observation_space['defender'].dtype)
-        self.state['attacker'] = np.array(self.init_attacker_position, dtype=self.observation_space['defender'].dtype)
 
         illegal = True
         epsilon = 0.25
@@ -92,8 +99,9 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         """
 
 
-            
+          
         v = self.v_max # speed of the car
+        
         omega = self.omega_max # angular velocity of the car
         if action == 0: # turn left
             omega = -omega
@@ -105,6 +113,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         else:
             #reverse
             omega = -np.pi
+            v = self.v_max
 
         
 
@@ -188,7 +197,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
       
         if player == 'attacker':
-            if dist_capture < self.capture_radius+self.v_max:
+            if dist_capture < self.capture_radius:
                 info = {'player': player, 'is_legal':False, 'status':'attacker collided with defender'}
                 done = False #should it be false?
                 next_state = state.copy()
@@ -532,7 +541,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             return jax.random.choice(key, self.num_actions)
         else:
             probs = policy_net.apply(params, nn_state)
-            return jax.random.categorical(key, probs)
+            return jax.random.choice(key, a=self.num_actions, p=probs)
     
     def get_legal_actions_mask(self, state, player):
         legal_actions_mask = []
@@ -599,7 +608,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         
     def single_rollout(self,args):
         #print("env state" , self.state)
-        game_type, params, policy_net, key, epsilon, gamma, render, for_q_value = args
+        game_type, params, policy_net, key, epsilon, gamma, render, for_q_value, one_step_reward = args
 
         if game_type != self.game_type:
             raise ValueError(f"game_type {game_type} does not match self.game_type {self.game_type}")
@@ -627,8 +636,9 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         if for_q_value:
             #append 0 to rewards
-            rewards['attacker'].append(0)
+            rewards['attacker'].append(one_step_reward)
             rewards['defender'].append(0)
+            step = 1
         # else: 
         #     state = self.reset()
             
