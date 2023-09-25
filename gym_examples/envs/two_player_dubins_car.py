@@ -19,7 +19,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         super().__init__()
 
         self.game_type = game_type
-        self.players = ['defender', 'attacker']
+        self.players = ['attacker', 'defender']
         self.num_actions = num_actions #3
         self.action_space = {'attacker':spaces.Discrete(self.num_actions), 'defender':spaces.Discrete(self.num_actions)}
 
@@ -139,7 +139,11 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         #reward = 1/(dist_goal**2)
         #reward = -((dist_goal - self.goal_radius)**2)/ max_distance**2
-        reward = -((dist_goal - self.goal_radius)**2)
+        #reward = -((dist_goal - self.goal_radius)**2)
+        dist_capture = np.linalg.norm(next_state['attacker'][:2] - next_state['defender'][:2]) 
+
+        reward = -((dist_capture)**2)
+
 
 
 
@@ -172,10 +176,10 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             next_state[player][0] = state[player][0]
             next_state[player][1] = state[player][1]
             done = False
-            if player == 'attacker':
+            if player == 'defender':
                 is_legal = True
             else:
-                is_legal = True
+                is_legal = False
 
             info = {'player': player, 'is_legal':is_legal, 'status':'out_of_bounds'}
             # print('oob')
@@ -189,7 +193,6 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         
         
 
-        dist_capture = np.linalg.norm(next_state['attacker'][:2] - next_state['defender'][:2]) 
 
         #self.reward = np.exp(-dist_goal) - np.exp(-dist_capture)
         
@@ -197,14 +200,14 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         if self.game_type == 'nash':
             done_on_capture = True
         else:
-            done_on_capture = False
+            done_on_capture = True #no constraints
       
         if player == 'attacker':
             if dist_capture < self.capture_radius:
-                info = {'player': player, 'is_legal':False, 'status':'attacker collided with defender'}
+                info = {'player': player, 'is_legal':True, 'status':'attacker collided with defender'}
                 done = done_on_capture #should it be false?
                 next_state = state.copy()
-                reward = reward #0
+                reward = reward
 
                 if update_env:
                     self.state = next_state
@@ -225,7 +228,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                 return next_state, reward, done, info
        
         if dist_goal < self.goal_radius:
-            reward = 100 #reward
+            reward = reward
             done = True
             info = {'player': player, 'is_legal':True, 'status':'goal_reached'}
 
@@ -780,7 +783,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         for player in self.players:
             G = 0
-            for r in reversed(rewards['attacker']):
+            for r in reversed(rewards['defender']):
                 G = r + gamma * G
                 returns[player].append(G)
             

@@ -434,7 +434,7 @@ def parallel_stackelberg_reinforce(
         )
         
         log_probs = log_probs.reshape(returns.shape)
-        masked_loss = padding_mask * (-log_probs * jax.lax.stop_gradient(returns))
+        masked_loss = padding_mask * (log_probs * jax.lax.stop_gradient(returns))
         return jnp.sum(masked_loss) / jnp.sum(padding_mask)
 
     @jax.jit
@@ -448,7 +448,7 @@ def parallel_stackelberg_reinforce(
             )
         )
         log_probs = log_probs.reshape(returns.shape)
-        masked_loss = padding_mask * (log_probs * jax.lax.stop_gradient(returns))
+        masked_loss = padding_mask * (-log_probs * jax.lax.stop_gradient(returns))
         return jnp.sum(masked_loss) / jnp.sum(padding_mask)
 
     # Define update function
@@ -748,7 +748,7 @@ def parallel_stackelberg_reinforce(
                     None
                 ]
             )
-            env.make_gif(f"gifs/experiment_stackelberg/{timestamp}_{episode}.gif")
+            env.make_gif(f"gifs/reverse_stackelberg/{timestamp}_{episode}.gif")
             save_params(episode, params, "stackelberg", timestamp)
 
             # bellman_error = calc_bellman_error(env, params, policy_net, num_eval_episodes, jax.random.PRNGKey(episode), epsilon, gamma)
@@ -768,9 +768,9 @@ def parallel_stackelberg_reinforce(
         #     training_player = 'attacker'
 
         if episode % 4 == 0:
-            training_player = 'defender'
-        else:
             training_player = 'attacker'
+        else:
+            training_player = 'defender'
 
         if (episode + 1) % batch_multiple == 0 and valid:
             print("training", training_player)
@@ -901,7 +901,7 @@ if __name__ == "__main__":
 
     # Logging
     print(game_type, " starting experiment at :", timestamp)
-    writer = SummaryWriter(f"runs4/experiment_{game_type}" + timestamp+"_drawless")
+    writer = SummaryWriter(f"runs_reverse/experiment_{game_type}" + timestamp+"_reverse")
     #Load data (deserialize)
     # with open('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-09-15 10:22:44.481035_episode_12224_params.pickle', 'rb') as handle:
     #     loaded_params = pickle.load(handle)
