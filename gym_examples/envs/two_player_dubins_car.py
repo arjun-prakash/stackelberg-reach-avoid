@@ -194,12 +194,15 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         #self.reward = np.exp(-dist_goal) - np.exp(-dist_capture)
         
 
-
+        if self.game_type == 'nash':
+            done_on_capture = True
+        else:
+            done_on_capture = False
       
         if player == 'attacker':
             if dist_capture < self.capture_radius:
                 info = {'player': player, 'is_legal':False, 'status':'attacker collided with defender'}
-                done = False #should it be false?
+                done = done_on_capture #should it be false?
                 next_state = state.copy()
                 reward = reward #0
 
@@ -211,7 +214,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         elif player == 'defender':
             if dist_capture < self.capture_radius:
                 info = {'player': player, 'is_legal':True, 'status':'defender collided with attacker'}
-                done = False #True
+                done = done_on_capture #True
                 reward = reward
                 #next_state = state.copy()
 

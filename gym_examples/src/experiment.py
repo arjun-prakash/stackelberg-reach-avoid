@@ -232,6 +232,8 @@ def parallel_nash_reinforce(
                 jax.nn.relu,
                 hk.Linear(64),
                 jax.nn.relu,
+                hk.Linear(env.num_actions),
+                jax.nn.softmax,
             ]
         )
         return net(observation)
@@ -277,7 +279,7 @@ def parallel_nash_reinforce(
         valid = True
         render = False
 
-        env.reset()
+        env.reset(key)
         states, actions, returns, masks, wins = parallel_rollouts(
             env, params, policy_net, num_parallel, key, epsilon, gamma
         )
@@ -302,6 +304,9 @@ def parallel_nash_reinforce(
         # Add up the wins from each dictionary
         for win_dict in wins:
             wins_ctr += Counter(win_dict)
+
+        writer.add_scalar('average returns', np.array(np.mean(batch_returns['attacker'])), episode)
+
 
         # print(f"Episode {episode} finished", 'returns:', np.mean(batch_returns[player]))
         # print('num wins', wins_ctr)
@@ -332,9 +337,10 @@ def parallel_nash_reinforce(
                     gamma,
                     True,
                     False,
+                    None
                 ]
             )
-            #env.make_gif(f"gifs/experiment_nash/{timestamp}_{episode}.gif")
+            env.make_gif(f"gifs/experiment_nash/{timestamp}_{episode}.gif")
             save_params(episode, params, "nash", timestamp)
 
             # bellman_error = calc_bellman_error(env, params, policy_net, num_eval_episodes, jax.random.PRNGKey(episode), epsilon, gamma)
