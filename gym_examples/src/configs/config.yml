@@ -14,9 +14,9 @@ env:
   timestep: 1
   velocity: 0.25
   turning_angle: 65
-  reward_type: "-dense reverse"
+  reward_type: "-dense each has own reward"
   training_method: "unbalanced (every 3 attacker, 1 defender), mixed attacker"
-  note: "soft radius, penalised illegal moves. This one has no penalty for getting caught. attacker y is 3,2,1 can go back. Need to change the done conditions back to false for stackelberg"
+  note: "soft radius, penalised illegal moves. This one has no penalty for getting caught. attacker y is 3,2,1 can go back. attacker gets reward for winning"
   
 
 hyperparameters:

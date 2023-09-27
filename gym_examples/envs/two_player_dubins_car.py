@@ -142,8 +142,8 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         #reward = -((dist_goal - self.goal_radius)**2)
         dist_capture = np.linalg.norm(next_state['attacker'][:2] - next_state['defender'][:2]) 
 
-        reward = -((dist_capture)**2)
-
+        reward = -((dist_capture)**2) + -(dist_goal**2)
+        
 
 
 
@@ -228,7 +228,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                 return next_state, reward, done, info
        
         if dist_goal < self.goal_radius:
-            reward = reward
+            reward = -100 #reward
             done = True
             info = {'player': player, 'is_legal':True, 'status':'goal_reached'}
 
@@ -707,7 +707,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                     if attacker_no_legal_moves:
                         defender_wins = True
                         wins['defender'] = 1
-                        #rewards['attacker'][-1] = -100
+                        #rewards['defender'][-1] = 100
                     break
 
                 if player == 'defender' and done:
