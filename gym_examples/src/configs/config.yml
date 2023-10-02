@@ -6,8 +6,8 @@ env:
   board_size: 4
   reward: 1
   max_steps: 50
-  init_defender_position: [0.,-1,1.571] 
-  init_attacker_position: [0,3.5, 4.712] 
+  init_defender_position: [-2.,-1,4.712] 
+  init_attacker_position: [0,3.5,1.571 ] 
   goal_position: [0,-4] 
   goal_radius: 1.0
   capture_radius: 0.25
