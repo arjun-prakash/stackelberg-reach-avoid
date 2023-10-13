@@ -98,10 +98,11 @@ def parallel_nash_reinforce(
         gamma,
         render=False,
         for_q_value=False,
+        rewards = None
     ):
         keys = jax.random.split(key, num_rollouts)
         args = [
-            ("nash", params, policy_net, k, epsilon, gamma, render, for_q_value)
+            ("nash", params, policy_net, k, epsilon, gamma, render, for_q_value, rewards)
             for k in keys
         ]
         with ProcessPool() as pool:
@@ -139,7 +140,8 @@ def parallel_nash_reinforce(
         return v
 
     def get_q_values(env, params, policy_net, num_rollouts, key, epsilon, gamma):
-        initial_state = env.reset()
+        initial_state = env.state #env.reset()
+        print('initial_state', initial_state)
         move_list = []
         for d_action in range(env.action_space["defender"].n):
             defender_state, d_reward, _, _ = env.step(
@@ -172,13 +174,15 @@ def parallel_nash_reinforce(
 
         q_values = np.array([move["q_value"] for move in move_list]).reshape(3, 3)
         best_attacker_moves = np.argmax(q_values, axis=1)
+        #best_attacker_moves = np.ravel(np.where(q_values[:,0]))
         best_defender_move = np.argmin(np.max(q_values, axis=1))
         best_attacker_move = best_attacker_moves[best_defender_move]
         q = q_values[best_defender_move][best_attacker_move]
+
         return q
 
     def calc_bellman_error(env, params, policy_net, num_rollouts, key, epsilon, gamma):
-        x_a = np.linspace(2, 2, 1)
+        x_a = np.linspace(-2, 2, 4)
         y_a = np.linspace(2, 2, 1)
         theta_a = np.linspace(0, 0, 1)
         x_d = np.linspace(0, 0, 1)
@@ -224,13 +228,9 @@ def parallel_nash_reinforce(
     def policy_network(observation):
         net = hk.Sequential(
             [
-                hk.Linear(100),
+                hk.Linear(64),
                 jax.nn.relu,
-                hk.Linear(100),
-                jax.nn.relu,
-                hk.Linear(100),
-                jax.nn.relu,
-                hk.Linear(100),
+                hk.Linear(64),
                 jax.nn.relu,
                 hk.Linear(env.num_actions),
                 jax.nn.softmax,
@@ -255,7 +255,7 @@ def parallel_nash_reinforce(
 
     # Define the optimizer
     agent_optimizer = optax.chain(
-        optax.clip(1.0), optax.radam(learning_rate=learning_rate)
+        optax.radam(learning_rate=learning_rate, b1=0.9, b2=0.9)
     )
     optimizer = {player: agent_optimizer for player in env.players}
     opt_state = {
@@ -279,7 +279,7 @@ def parallel_nash_reinforce(
         valid = True
         render = False
 
-        env.reset()
+        env.reset(key)
         states, actions, returns, masks, wins = parallel_rollouts(
             env, params, policy_net, num_parallel, key, epsilon, gamma
         )
@@ -304,6 +304,9 @@ def parallel_nash_reinforce(
         # Add up the wins from each dictionary
         for win_dict in wins:
             wins_ctr += Counter(win_dict)
+
+        writer.add_scalar('average returns', np.array(np.mean(batch_returns['attacker'])), episode)
+
 
         # print(f"Episode {episode} finished", 'returns:', np.mean(batch_returns[player]))
         # print('num wins', wins_ctr)
@@ -334,14 +337,15 @@ def parallel_nash_reinforce(
                     gamma,
                     True,
                     False,
+                    None
                 ]
             )
             env.make_gif(f"gifs/experiment_nash/{timestamp}_{episode}.gif")
             save_params(episode, params, "nash", timestamp)
 
-            bellman_error = calc_bellman_error(env, params, policy_net, num_eval_episodes, jax.random.PRNGKey(episode), epsilon, gamma)
-            print('bellman_error', bellman_error)
-            writer.add_scalar('bellman_error', bellman_error, episode)
+            # bellman_error = calc_bellman_error(env, params, policy_net, num_eval_episodes, jax.random.PRNGKey(episode), epsilon, gamma)
+            # print('bellman_error', bellman_error)
+            # writer.add_scalar('bellman_error', bellman_error, episode)
 
         if (episode + 1) % batch_multiple == 0 and valid:
             for player in env.players:
@@ -423,11 +427,12 @@ def parallel_stackelberg_reinforce(
         params, observations, actions, action_masks, returns, padding_mask
     ):
         action_probabilities = policy_net.apply(params, observations, action_masks)
-        log_probs = jnp.log(
-            jnp.take_along_axis(
+        #action_probabilities = jax.nn.softmax(action_probabilities)
+        log_probs = jnp.log(jnp.take_along_axis(
                 action_probabilities + 10e-6, actions[..., None], axis=-1
             )
         )
+        
         log_probs = log_probs.reshape(returns.shape)
         masked_loss = padding_mask * (-log_probs * jax.lax.stop_gradient(returns))
         return jnp.sum(masked_loss) / jnp.sum(padding_mask)
@@ -437,8 +442,8 @@ def parallel_stackelberg_reinforce(
         params, observations, actions, action_masks, returns, padding_mask
     ):
         action_probabilities = policy_net.apply(params, observations, action_masks)
-        log_probs = jnp.log(
-            jnp.take_along_axis(
+        #action_probabilities = jax.nn.softmax(action_probabilities)
+        log_probs = jnp.log(jnp.take_along_axis(
                 action_probabilities + 10e-6, actions[..., None], axis=-1
             )
         )
@@ -482,10 +487,11 @@ def parallel_stackelberg_reinforce(
         gamma,
         render=False,
         for_q_value=False,
+        reward=None
     ):
         keys = jax.random.split(key, num_rollouts)
         args = [
-            ("stackelberg", params, policy_net, k, epsilon, gamma, render, for_q_value)
+            ("stackelberg", params, policy_net, k, epsilon, gamma, render, for_q_value, reward)
             for k in keys
         ]
         with ProcessPool() as pool:
@@ -610,13 +616,9 @@ def parallel_stackelberg_reinforce(
     def policy_network(observation, legal_moves):
         net = hk.Sequential(
             [
-                hk.Linear(100),
+                hk.Linear(64),
                 jax.nn.relu,
-                hk.Linear(100),
-                jax.nn.relu,
-                hk.Linear(100),
-                jax.nn.relu,
-                hk.Linear(100),
+                hk.Linear(64),
                 jax.nn.relu,
                 hk.Linear(env.num_actions),
                 jax.nn.softmax,
@@ -625,12 +627,11 @@ def parallel_stackelberg_reinforce(
         # legal_moves = legal_moves[..., None]
 
         logits = net(observation)
-        # legal_moves = jnp.broadcast_to(legal_moves, logits.shape)  # Broadcast to the shape of logits
 
-        # masked_logits = jnp.multiply(logits, legal_moves)
-        masked_logits = jnp.where(legal_moves, logits, -1e9)
+        #masked_logits = jnp.where(legal_moves, logits, -1e8)
+        masked_logits = jnp.where(legal_moves, logits, 1e-8)
 
-        # probabilities = jax.nn.softmax(masked_logits)
+
         return masked_logits
 
     ############################
@@ -655,7 +656,7 @@ def parallel_stackelberg_reinforce(
 
     # Define the optimizer
     agent_optimizer = optax.chain(
-        optax.clip(1.0), optax.radam(learning_rate=learning_rate)
+        optax.radam(learning_rate=learning_rate, b1=.9, b2=.9),
     )
     optimizer = {player: agent_optimizer for player in env.players}
     opt_state = {
@@ -672,10 +673,12 @@ def parallel_stackelberg_reinforce(
     traj_length = []
     epsilon = epsilon_start
     training_player = 'attacker'  # start with the first player (the defender)
+    training_counter = 1
     defender_norm = [0]
     attacker_norm = [0]
     defender_grad_norm = [0]
     attacker_grad_norm = [0]
+
 
     ##################################
     # Start the main loop over episodes
@@ -685,7 +688,7 @@ def parallel_stackelberg_reinforce(
         valid = True
         render = False
 
-        env.reset()
+        env.reset(key)
         states, actions, action_masks, returns, masks, wins = parallel_rollouts(
             env, params, policy_net, num_parallel, key, epsilon, gamma
         )
@@ -722,6 +725,8 @@ def parallel_stackelberg_reinforce(
             episode,
         )
 
+        writer.add_scalar('average returns', np.array(np.mean(batch_returns['attacker'])), episode)
+
         if episode % eval_interval == 0:
             (
                 states,
@@ -740,17 +745,32 @@ def parallel_stackelberg_reinforce(
                     gamma,
                     True,
                     False,
+                    None
                 ]
             )
             env.make_gif(f"gifs/experiment_stackelberg/{timestamp}_{episode}.gif")
             save_params(episode, params, "stackelberg", timestamp)
 
-            bellman_error = calc_bellman_error(env, params, policy_net, num_eval_episodes, jax.random.PRNGKey(episode), epsilon, gamma)
-            print('bellman_error', bellman_error)
-            writer.add_scalar('bellman_error', bellman_error, episode)
-            training_player = env.players[
-                (env.players.index(training_player) + 1) % len(env.players)
-            ]  # switch trining plauyer
+            # bellman_error = calc_bellman_error(env, params, policy_net, num_eval_episodes, jax.random.PRNGKey(episode), epsilon, gamma)
+            # print('bellman_error', bellman_error)
+            # writer.add_scalar('bellman_error', bellman_error, episode)
+            
+            # if training_counter % 4 == 0:
+            #     training_player = 'attacker'
+            # else:
+            #     training_player = 'defender'
+            # training_counter += 1
+            # training_player = env.players[
+            #     (env.players.index(training_player) + 1) % len(env.players)
+            # ]  # switch trining player
+        #     training_player = 'defender' 
+        # else:
+        #     training_player = 'attacker'
+
+        if episode % 4 == 0:
+            training_player = 'defender'
+        else:
+            training_player = 'attacker'
 
         if (episode + 1) % batch_multiple == 0 and valid:
             print("training", training_player)
@@ -842,10 +862,22 @@ if __name__ == "__main__":
     
     game_type = config['game']['type']
     timestamp = str(datetime.datetime.now())
-    env = TwoPlayerDubinsCarEnv()
-    print(game_type, " starting experiment at :", timestamp)
 
-    writer = SummaryWriter(f"runs/experiment_{game_type}" + timestamp)
+    env = TwoPlayerDubinsCarEnv(
+        game_type=game_type,
+        num_actions=config['env']['num_actions'],
+        size=config['env']['board_size'],
+        reward=config['env']['reward'],
+        max_steps=config['env']['max_steps'],
+        init_defender_position=config['env']['init_defender_position'],
+        init_attacker_position=config['env']['init_attacker_position'],
+        capture_radius=config['env']['capture_radius'],
+        goal_position=config['env']['goal_position'],
+        goal_radius=config['env']['goal_radius'],
+        timestep=config['env']['timestep'],
+        v_max=config['env']['velocity'],
+        omega_max=config['env']['turning_angle'],
+    )
 
     # Hyperparameters
     learning_rate = config['hyperparameters']['learning_rate']
@@ -855,21 +887,26 @@ if __name__ == "__main__":
     epsilon_decay = config['hyperparameters']['epsilon_decay']
 
     # Training parameters
-    num_parallel = mp.cpu_count()
-    print("using", num_parallel, "cores")
     batch_multiple = config['training']['batch_multiple']  # the batch size will be num_parallel * batch_multiple
     num_episodes = config['training']['num_episodes']
     loaded_params = config['training']['loaded_params']
+    num_parallel = config['training']['num_parallel'] #mp.cpu_count()
+    if num_parallel != config['training']['num_parallel']: 
+        ValueError("num_parallel in config file does not match the number of cores on this machine")
+    print("cpu_count", num_parallel, "config", config['training']['num_parallel'])
 
     # Evaluation parameters
     eval_interval = config['eval']['eval_interval']
     num_eval_episodes = config['eval']['num_eval_episodes']
 
+    # Logging
+    print(game_type, " starting experiment at :", timestamp)
+    writer = SummaryWriter(f"runs4/experiment_{game_type}" + timestamp+"_drawless")
+    #Load data (deserialize)
+    # with open('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-09-15 10:22:44.481035_episode_12224_params.pickle', 'rb') as handle:
+    #     loaded_params = pickle.load(handle)
 
-
-
-
-
+    # Training
     if game_type == "nash":
         trained_params = parallel_nash_reinforce(
             env,
