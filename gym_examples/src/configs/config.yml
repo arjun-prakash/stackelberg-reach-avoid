@@ -1,5 +1,5 @@
 game:
-  type: "nash"
+  type: "stackelberg"
 
 env:
   num_actions: 3
@@ -35,7 +35,7 @@ training:
 
 eval:
   eval_interval: 128
-  num_eval_episodes: 128
+  num_eval_episodes: 16
 
 #these are hard coded!
 architecture:

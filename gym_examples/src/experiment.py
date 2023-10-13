@@ -901,7 +901,7 @@ if __name__ == "__main__":
 
     # Logging
     print(game_type, " starting experiment at :", timestamp)
-    writer = SummaryWriter(f"runs4/experiment_{game_type}" + timestamp+"_drawless")
+    writer = SummaryWriter(f"runs5/experiment_{game_type}" + timestamp+"_drawless")
     #Load data (deserialize)
     # with open('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-09-15 10:22:44.481035_episode_12224_params.pickle', 'rb') as handle:
     #     loaded_params = pickle.load(handle)

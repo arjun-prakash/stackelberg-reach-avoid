@@ -53,7 +53,8 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         """
         if key is not None: #move attacker lefit or right
             attacker_position = self.init_attacker_position
-            perturbation = jax.random.choice(key, a=np.array([3,2,1]))
+            #perturbation = jax.random.choice(key, a=np.array([3,2,1]))
+            perturbation = jax.random.uniform(key, minval=1, maxval=3)
             attacker_position[1] = perturbation
             self.state['attacker'] = np.array(attacker_position, dtype=self.observation_space['defender'].dtype)
         else:
