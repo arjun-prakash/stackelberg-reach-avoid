@@ -796,3 +796,195 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         
 
         return states, actions, action_masks, returns, padding_mask, wins
+
+
+
+    def single_rollout_round_robin(self,args):
+        #print("env state" , self.state)
+        game_type, params_a, params_d, policy_net_stackelberg, policy_net_nash, player_types, key, epsilon, gamma, render, for_q_value, one_step_reward = args
+
+        if game_type != self.game_type:
+            raise ValueError(f"game_type {game_type} does not match self.game_type {self.game_type}")
+
+
+        states = {player: [] for player in self.players}
+        actions = {player: [] for player in self.players}
+        action_masks = {player: [] for player in self.players}
+        rewards = {player: [] for player in self.players}
+        padding_mask = {player: [] for player in self.players}
+
+        wins = {'attacker': 0, 'defender': 0, 'draw': 0}
+        done = False
+        step = 0
+        defender_wins = False
+        attacker_wins = False
+        defender_oob = False
+
+        defender_no_legal_moves = False
+        attacker_no_legal_moves = False
+
+
+        state = self.state
+        #state = self.reset()
+
+        if for_q_value:
+            #append 0 to rewards
+            rewards['attacker'].append(one_step_reward)
+            rewards['defender'].append(0)
+            step = 1
+        # else: 
+        #     state = self.reset()
+            
+        nn_state = self.encode_helper(state)
+
+
+
+
+        while not done and not defender_wins and not attacker_wins and step < self.max_steps:
+            for player in self.players:
+                states[player].append(nn_state)
+
+                key, subkey = jax.random.split(key)
+
+
+                if player_types[player] == 'nash':
+                    if player == 'defender':
+                        action = self.unconstrained_select_action(nn_state, params_d[player], policy_net_nash,  subkey, epsilon)
+                    elif player == 'attacker':
+                        action = self.unconstrained_select_action(nn_state, params_a[player], policy_net_nash,  subkey, epsilon)
+                    state, reward, done, info = self.step(state=state, action=action, player=player, update_env=True)
+                    nn_state = self.encode_helper(state)
+                    actions[player].append(action)
+                    rewards[player].append(reward)
+                    action_masks[player].append([1]*self.num_actions)
+
+
+                elif player_types[player] == 'stackelberg':
+                    legal_actions_mask = self.get_legal_actions_mask(state, player)
+                    if sum(legal_actions_mask) != 0:
+                        if player == 'defender':
+                            action = self.constrained_select_action(nn_state, policy_net_stackelberg, params_d[player], legal_actions_mask, subkey, epsilon)
+                        elif player == 'attacker':
+                            action = self.constrained_select_action(nn_state, policy_net_stackelberg, params_a[player], legal_actions_mask, subkey, epsilon)
+
+                            #action = self.constrained_deterministic_select_action(nn_state, policy_net, params[player], legal_actions_mask, subkey, epsilon)
+                        #action = self.constrained_select_action(nn_state, policy_net, params[player], legal_actions_mask, subkey, epsilon)
+
+                        action_masks[player].append(legal_actions_mask)
+                        state, reward, done, info = self.step(state=state, action=action, player=player, update_env=True)
+                        nn_state = self.encode_helper(state)
+                        actions[player].append(action)
+                        rewards[player].append(reward)
+                    else: #case where a player has no legal moves
+                        done = True
+                        if player == 'defender': 
+                            defender_no_legal_moves = True
+                        elif player == 'attacker': 
+                            attacker_no_legal_moves = True
+
+                            
+                            
+
+
+                if player == 'attacker' and done:
+                    if info['status'] == 'goal_reached':
+                        attacker_wins = True
+                        wins['attacker'] = 1
+                    if info['status'] == 'attacker collided with defender':
+                        defender_wins = True
+                        wins['defender'] = 1
+                    if info['status'] == 'out_of_bounds':
+                        defender_wins = True
+                        wins['defender'] = 1
+                    if attacker_no_legal_moves:
+                        defender_wins = True
+                        wins['defender'] = 1
+                        rewards['defender'][-1] = 100
+                    break
+
+                if player == 'defender' and done:
+                    rewards['attacker'] = rewards['attacker'][:-1]
+                    actions['attacker'] = actions['attacker'][:-1]
+                    if defender_no_legal_moves:
+                        #attacker_wins = True
+                        #wins['attacker'] = 1
+                        #rewards['attacker'][-1] = -20
+                        pass
+                    if info['status'] == 'defender collided with attacker':
+                        #defender_wins = True
+                        #wins['defender'] = 1
+                        #rewards['attacker'][-1] = -1
+                        pass
+                    break
+
+                # if step == self.max_steps - 1:
+                #     done = True
+                #     defender_wins = True
+                #     wins['defender'] = 1
+                #     rewards['attacker'][-1] = -1
+                #     break
+
+
+                
+
+                
+
+                # if done and player == 'defender' and info['is_legal'] == True: #only attacker can end the game, iterate one more time
+                #     defender_wins = True
+                #     wins['defender'] = 1
+
+                # if (defender_wins and player == 'attacker'): #overwrite the attacker's last reward
+                #     rewards['attacker'][-1] = -1
+                #     done = True
+                #     break
+
+                # if done and player == 'defender' and info['is_legal'] == False: #only attacker can end the game, iterate one more time
+                #     defender_oob = True
+
+                # if (defender_oob and player == 'attacker'): #overwrite the attacker's last reward
+                #     rewards['attacker'][-1] = 1
+                #     done = True
+                #     wins['attacker'] = 1
+                #     break
+
+                # if (done and player == 'attacker'): #break if attacker wins, game is over
+                #     if info['is_legal']:
+                #         attacker_wins = True
+                #         wins['attacker'] = 1
+                #     elif not info['is_legal']:
+                #         defender_wins = True
+                #         wins['defender'] = 1
+                #     break
+                
+                
+                
+                
+                if render:
+                    self.render()
+
+
+
+            step += 1
+            #print(step)
+
+        if not defender_wins and not attacker_wins:
+            wins['draw'] = 1
+            #rewards['attacker'][-1] = -1
+
+        returns = {player: [] for player in self.players}
+
+        for player in self.players:
+            G = 0
+            for r in reversed(rewards['defender']):
+                G = r + gamma * G
+                returns[player].append(G)
+            
+            returns[player] = list(reversed(returns[player]))
+
+        if not for_q_value:
+            for player in self.players:
+                states[player], actions[player], action_masks[player], returns[player], padding_mask[player] = self.pad_and_mask(states[player], actions[player], action_masks[player], returns[player])
+    
+        
+
+        return states, actions, action_masks, returns, padding_mask, wins
