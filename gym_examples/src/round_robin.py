@@ -47,6 +47,7 @@ def play_match(
     params_list_a,
     params_list_d,
     player_types,
+    salt,
 ):
     # Define loss function
     # Define loss function
@@ -111,34 +112,37 @@ def play_match(
             key = jax.random.PRNGKey(episode)
 
 
+    win_ctr= Counter()
+    for episode in range(50):
+        _ = env.reset()
+        (
+            states,
+            actions,
+            action_masks,
+            returns,
+            padding_mask,
+            wins,
+        ) = env.single_rollout_round_robin(
+            [
+                '',
+                loaded_params_a,
+                loaded_params_d,
+                policy_net_stackelberg,
+                policy_net_nash,
+                player_types,
+                jax.random.PRNGKey(episode*salt),
+                epsilon_start,
+                gamma,
+                False,
+                False,
+                None,
+            ]
+        )
+        #env.make_gif(f"gifs/round_robin/{timestamp}_{episode}.gif")
+        print("Episode", episode, "Winner", wins)
+        win_ctr += Counter(wins)
 
-
-    _ = env.reset()
-    (
-        states,
-        actions,
-        action_masks,
-        returns,
-        padding_mask,
-        wins,
-    ) = env.single_rollout_round_robin(
-        [
-            'stackelberg',
-            loaded_params_a,
-            loaded_params_d,
-            policy_net_stackelberg,
-            policy_net_nash,
-            player_types,
-            jax.random.PRNGKey(43),
-            epsilon_start,
-            gamma,
-            True,
-            False,
-            None,
-        ]
-    )
-    env.make_gif(f"gifs/round_robin/{timestamp}_{episode}.gif")
-    print('game done')
+    print(win_ctr)
 
       
 
@@ -164,7 +168,7 @@ if __name__ == "__main__":
     config = load_config("configs/config.yml")
     print_config(config)
     
-    game_type = config['game']['type']
+    game_type = 'nash'#config['game']['type']
     timestamp = str(datetime.datetime.now())
 
     env = TwoPlayerDubinsCarEnv(
@@ -211,14 +215,17 @@ if __name__ == "__main__":
     import pickle
 
     # Get a list of all files in the directory
-    files_a = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-09-23 17:38:30.650545_episode_*_params.pickle') #paper version
+    #files_a = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-09-23 17:38:30.650545_episode_*_params.pickle') #paper version
     #files_a = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-09-27 20:17:29.486323_episode_*_params.pickle') #reverse
+    files_a = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_nash/2023-09-26 12:53:29.888866_episode_*_params.pickle')
+
     files_a.sort(key=lambda x: int(x.split('_episode_')[1].split('_params')[0]))
     files_a= files_a[-1:]
     print(files_a)
 
     #files_d = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_nash/2023-09-26 12:53:29.888866_episode_*_params.pickle')
-    files_d = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-09-27 20:17:29.486323_episode_*_params.pickle') #reverse
+    #files_d = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-09-27 20:17:29.486323_episode_*_params.pickle') #reverse
+    files_d = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-09-23 17:38:30.650545_episode_*_params.pickle') #paper version
 
     files_d.sort(key=lambda x: int(x.split('_episode_')[1].split('_params')[0]))
     files_n= files_d[-1:]
@@ -244,7 +251,8 @@ if __name__ == "__main__":
         timestamp=timestamp,
         params_list_a=files_a,
         params_list_d=files_d,
-        player_types={'attacker': 'stackelberg', 'defender': 'stackelberg'}
+        player_types={'attacker': 'nash', 'defender': 'stackelberg'},
+        salt=7,
     )
 
 

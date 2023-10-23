@@ -803,8 +803,8 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         #print("env state" , self.state)
         game_type, params_a, params_d, policy_net_stackelberg, policy_net_nash, player_types, key, epsilon, gamma, render, for_q_value, one_step_reward = args
 
-        if game_type != self.game_type:
-            raise ValueError(f"game_type {game_type} does not match self.game_type {self.game_type}")
+        # if game_type != self.game_type:
+        #     raise ValueError(f"game_type {game_type} does not match self.game_type {self.game_type}")
 
 
         states = {player: [] for player in self.players}
