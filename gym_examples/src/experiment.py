@@ -860,7 +860,7 @@ if __name__ == "__main__":
     config = load_config("configs/config.yml")
     print_config(config)
     
-    game_type = config['game']['type']
+    game_type = 'nash'#config['game']['type']
     timestamp = str(datetime.datetime.now())
 
     env = TwoPlayerDubinsCarEnv(
