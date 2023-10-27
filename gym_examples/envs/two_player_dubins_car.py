@@ -52,16 +52,30 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         Reset the environment and return the initial state
         """
         if key is not None: #move attacker lefit or right
+            key_attacker, key_defender = jax.random.split(key)
+
             attacker_position = self.init_attacker_position
             #perturbation = jax.random.choice(key, a=np.array([3,2,1]))
-            perturbation = jax.random.uniform(key, minval=1, maxval=3)
-            attacker_position[1] = perturbation
-            self.state['attacker'] = np.array(attacker_position, dtype=self.observation_space['defender'].dtype)
+
+            attacker_perturbation_x = jax.random.uniform(key_attacker, minval=-1, maxval=1)
+            attacker_position[0] = attacker_perturbation_x
+            attacker_perturbation_y = jax.random.uniform(key_attacker, minval=1, maxval=3)
+            attacker_position[1] = attacker_perturbation_y
+
+            defender_position = self.init_defender_position
+            defender_perturbation_x = jax.random.uniform(key_defender, minval=-0.5, maxval=0.5)
+            defender_position[0] = defender_perturbation_x
+            defender_perturbation_y = jax.random.uniform(key_defender, minval=-1.5, maxval=-0.5)
+            defender_position[1] = defender_perturbation_y
+
+
+
+
+            self.state['attacker'] = np.array(attacker_position, dtype=self.observation_space['attacker'].dtype)
+            self.state['defender'] = np.array(defender_position, dtype=self.observation_space['defender'].dtype)
         else:
             self.state['attacker'] = np.array(self.init_attacker_position, dtype=self.observation_space['attacker'].dtype)
-
-
-        self.state['defender'] = np.array(self.init_defender_position, dtype=self.observation_space['defender'].dtype)
+            self.state['defender'] = np.array(self.init_defender_position, dtype=self.observation_space['defender'].dtype)
 
         illegal = True
         epsilon = 0.25
