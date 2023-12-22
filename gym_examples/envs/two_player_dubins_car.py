@@ -142,7 +142,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         #reward = -((dist_goal - self.goal_radius)**2)
         dist_capture = np.linalg.norm(next_state['attacker'][:2] - next_state['defender'][:2]) 
 
-        reward = -((dist_capture)**2) + (dist_goal**2)
+        reward = -((dist_capture)**2) #+ (dist_goal**2)
         
 
 
@@ -159,22 +159,52 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         #     next_state[player][1] = self.observation_space[player].low[1]
 
 
+        # out_of_bounds = False
+
+        # # Check x-boundary
+        # if next_state[player][0] <= self.observation_space[player].low[0] or next_state[player][0] >= self.observation_space[player].high[0]:
+        #     out_of_bounds = True
+        #     next_state[player][2] = (np.pi + next_state[player][2]) % (2 * np.pi)
+
+        # # Check y-boundary
+        # if next_state[player][1] <= self.observation_space[player].low[1] or next_state[player][1] >= self.observation_space[player].high[1]:
+        #     out_of_bounds = True
+        #     next_state[player][2] = (np.pi + next_state[player][2]) % (2 * np.pi)
+
         out_of_bounds = False
 
-        # Check x-boundary
-        if next_state[player][0] <= self.observation_space[player].low[0] or next_state[player][0] >= self.observation_space[player].high[0]:
+        # Check and handle x-boundary
+        if next_state[player][0] <= self.observation_space[player].low[0]:
+            # Reflect position and orientation if it crosses the left boundary
+            next_state[player][0] = self.observation_space[player].low[0] + (self.observation_space[player].low[0] - next_state[player][0])
+            next_state[player][2] = -next_state[player][2]
             out_of_bounds = True
-            next_state[player][2] = (np.pi + next_state[player][2]) % (2 * np.pi)
+        elif next_state[player][0] >= self.observation_space[player].high[0]:
+            # Reflect position and orientation if it crosses the right boundary
+            next_state[player][0] = self.observation_space[player].high[0] - (next_state[player][0] - self.observation_space[player].high[0])
+            next_state[player][2] = -next_state[player][2]
+            out_of_bounds = True
 
-        # Check y-boundary
-        if next_state[player][1] <= self.observation_space[player].low[1] or next_state[player][1] >= self.observation_space[player].high[1]:
+        # Check and handle y-boundary
+        if next_state[player][1] <= self.observation_space[player].low[1]:
+            # Reflect position and orientation if it crosses the bottom boundary
+            next_state[player][1] = self.observation_space[player].low[1] + (self.observation_space[player].low[1] - next_state[player][1])
+            next_state[player][2] = np.pi - next_state[player][2]
             out_of_bounds = True
-            next_state[player][2] = (np.pi + next_state[player][2]) % (2 * np.pi)
+        elif next_state[player][1] >= self.observation_space[player].high[1]:
+            # Reflect position and orientation if it crosses the top boundary
+            next_state[player][1] = self.observation_space[player].high[1] - (next_state[player][1] - self.observation_space[player].high[1])
+            next_state[player][2] = np.pi - next_state[player][2]
+            out_of_bounds = True
+
+        # Normalize the angle to keep it within [0, 2*pi)
+        next_state[player][2] = next_state[player][2] % (2 * np.pi)
+
 
         if out_of_bounds:
             reward = reward
-            next_state[player][0] = state[player][0]
-            next_state[player][1] = state[player][1]
+            # next_state[player][0] = state[player][0]
+            # next_state[player][1] = state[player][1]
             done = False
             if player == 'defender':
                 is_legal = True
@@ -987,4 +1017,4 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
     
         
 
-        return states, actions, action_masks, returns, padding_mask, wins
+        return states, actions, action_masks, returns, padding_mask, wins, step

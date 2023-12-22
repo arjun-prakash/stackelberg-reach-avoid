@@ -113,6 +113,8 @@ def play_match(
 
 
     win_ctr= Counter()
+    win_lengths = []
+    other_lengths = []
     for episode in range(50):
         _ = env.reset()
         (
@@ -122,6 +124,7 @@ def play_match(
             returns,
             padding_mask,
             wins,
+            step
         ) = env.single_rollout_round_robin(
             [
                 '',
@@ -139,10 +142,19 @@ def play_match(
             ]
         )
         #env.make_gif(f"gifs/round_robin/{timestamp}_{episode}.gif")
-        print("Episode", episode, "Winner", wins)
+        #print("Episode", episode, "Winner", wins)
+        #print('length', step)
+        if wins['attacker'] == 1:
+            win_lengths.append(step)
+        else:
+            other_lengths.append(step)
         win_ctr += Counter(wins)
 
     print(win_ctr)
+    print('average win length', np.mean(win_lengths))
+    print('std win length', np.std(win_lengths))
+    print('average other length', np.mean(other_lengths))
+    print('std pther length', np.std(other_lengths))
 
       
 
@@ -252,7 +264,7 @@ if __name__ == "__main__":
         params_list_a=files_a,
         params_list_d=files_d,
         player_types={'attacker': 'nash', 'defender': 'stackelberg'},
-        salt=7,
+        salt=1,
     )
 
 

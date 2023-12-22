@@ -21,7 +21,7 @@ import matplotlib.pyplot as plt
 # import gymnasium as gym
 import numpy as np
 import optax
-from envs.two_player_dubins_car import TwoPlayerDubinsCarEnv
+from envs.two_player_grid_world import TwoPlayerGridWorldEnv
 from matplotlib import cm
 from PIL import Image
 from torch.utils.tensorboard import SummaryWriter
@@ -55,7 +55,7 @@ def parallel_nash_reinforce(
             )
         )
         log_probs = log_probs.reshape(returns.shape)
-        masked_loss = mask * (log_probs * jax.lax.stop_gradient(returns))
+        masked_loss = mask * (-log_probs * jax.lax.stop_gradient(returns))
         return jnp.sum(masked_loss) / jnp.sum(mask)
 
     @jax.jit
@@ -67,7 +67,7 @@ def parallel_nash_reinforce(
             )
         )
         log_probs = log_probs.reshape(returns.shape)
-        masked_loss = mask * (-log_probs * jax.lax.stop_gradient(returns))
+        masked_loss = mask * (log_probs * jax.lax.stop_gradient(returns))
         return jnp.sum(masked_loss) / jnp.sum(mask)
 
     # Define update function
@@ -98,11 +98,12 @@ def parallel_nash_reinforce(
         gamma,
         render=False,
         for_q_value=False,
-        rewards = None
+        rewards = None,
+        state=None
     ):
         keys = jax.random.split(key, num_rollouts)
         args = [
-            ("nash", params, policy_net, k, epsilon, gamma, render, for_q_value, rewards)
+            ("nash", params, policy_net, k, epsilon, gamma, render, for_q_value, rewards, state)
             for k in keys
         ]
         with ProcessPool() as pool:
@@ -134,6 +135,7 @@ def parallel_nash_reinforce(
             gamma,
             render=False,
             for_q_value=False,
+            
         )
         attacker_returns = [r["attacker"][0] for r in returns]
         v = np.mean(attacker_returns)
@@ -221,17 +223,14 @@ def parallel_nash_reinforce(
 
     def save_params(episode_num, params, game_type, timestamp):
         with open(
-            f"data/experiment_{game_type}/{timestamp}_episode_{episode_num}_params.pickle", "wb"
+            f"data/experiment_grid_{game_type}/{timestamp}_episode_{episode_num}_params.pickle", "wb"
         ) as handle:
             pickle.dump(params, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     def policy_network(observation):
         net = hk.Sequential(
             [
-                hk.Linear(64),
-                jax.nn.relu,
-                hk.Linear(64),
-                jax.nn.relu,
+                hk.Linear(32),
                 hk.Linear(env.num_actions),
                 jax.nn.softmax,
             ]
@@ -340,7 +339,7 @@ def parallel_nash_reinforce(
                     None
                 ]
             )
-            env.make_gif(f"gifs/reverse_nash/{timestamp}_{episode}.gif")
+            env.make_gif(f"gifs/debug/{timestamp}_{episode}.gif")
             save_params(episode, params, "nash", timestamp)
 
             # bellman_error = calc_bellman_error(env, params, policy_net, num_eval_episodes, jax.random.PRNGKey(episode), epsilon, gamma)
@@ -434,7 +433,7 @@ def parallel_stackelberg_reinforce(
         )
         
         log_probs = log_probs.reshape(returns.shape)
-        masked_loss = padding_mask * (log_probs * jax.lax.stop_gradient(returns))
+        masked_loss = padding_mask * (-log_probs * jax.lax.stop_gradient(returns))
         return jnp.sum(masked_loss) / jnp.sum(padding_mask)
 
     @jax.jit
@@ -448,7 +447,7 @@ def parallel_stackelberg_reinforce(
             )
         )
         log_probs = log_probs.reshape(returns.shape)
-        masked_loss = padding_mask * (-log_probs * jax.lax.stop_gradient(returns))
+        masked_loss = padding_mask * (log_probs * jax.lax.stop_gradient(returns))
         return jnp.sum(masked_loss) / jnp.sum(padding_mask)
 
     # Define update function
@@ -487,11 +486,12 @@ def parallel_stackelberg_reinforce(
         gamma,
         render=False,
         for_q_value=False,
-        reward=None
+        reward=None,
+        state=None
     ):
         keys = jax.random.split(key, num_rollouts)
         args = [
-            ("stackelberg", params, policy_net, k, epsilon, gamma, render, for_q_value, reward)
+            ("stackelberg", params, policy_net, k, epsilon, gamma, render, for_q_value, reward, state)
             for k in keys
         ]
         with ProcessPool() as pool:
@@ -609,16 +609,16 @@ def parallel_stackelberg_reinforce(
 
     def save_params(episode_num, params, game_type, timestamp):
         with open(
-            f"data/experiment_{game_type}/{timestamp}_episode_{episode_num}_params.pickle", "wb"
+            f"data/experiment_grid_{game_type}/{timestamp}_episode_{episode_num}_params.pickle", "wb"
         ) as handle:
             pickle.dump(params, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     def policy_network(observation, legal_moves):
         net = hk.Sequential(
             [
-                hk.Linear(64),
+                hk.Linear(100),
                 jax.nn.relu,
-                hk.Linear(64),
+                hk.Linear(100),
                 jax.nn.relu,
                 hk.Linear(env.num_actions),
                 jax.nn.softmax,
@@ -688,9 +688,9 @@ def parallel_stackelberg_reinforce(
         valid = True
         render = False
 
-        env.reset(key)
+        _ = env.reset(key)
         states, actions, action_masks, returns, masks, wins = parallel_rollouts(
-            env, params, policy_net, num_parallel, key, epsilon, gamma
+            env, params, policy_net, num_parallel, key, epsilon, gamma, None
         )
         for (
             rollout_states,
@@ -745,10 +745,11 @@ def parallel_stackelberg_reinforce(
                     gamma,
                     True,
                     False,
+                    None,
                     None
                 ]
             )
-            env.make_gif(f"gifs/reverse_stackelberg/{timestamp}_{episode}.gif")
+            env.make_gif(f"gifs/debug/{timestamp}_{episode}.gif")
             save_params(episode, params, "stackelberg", timestamp)
 
             # bellman_error = calc_bellman_error(env, params, policy_net, num_eval_episodes, jax.random.PRNGKey(episode), epsilon, gamma)
@@ -860,27 +861,20 @@ if __name__ == "__main__":
     config = load_config("configs/config.yml")
     print_config(config)
     
-    game_type = 'nash'#config['game']['type']
+    game_type = 'stackelberg'#config['game']['type']
     timestamp = str(datetime.datetime.now())
 
-    env = TwoPlayerDubinsCarEnv(
+    env = TwoPlayerGridWorldEnv(
         game_type=game_type,
-        num_actions=config['env']['num_actions'],
-        size=config['env']['board_size'],
-        reward=config['env']['reward'],
-        max_steps=config['env']['max_steps'],
-        init_defender_position=config['env']['init_defender_position'],
-        init_attacker_position=config['env']['init_attacker_position'],
-        capture_radius=config['env']['capture_radius'],
-        goal_position=config['env']['goal_position'],
-        goal_radius=config['env']['goal_radius'],
-        timestep=config['env']['timestep'],
-        v_max=config['env']['velocity'],
-        omega_max=config['env']['turning_angle'],
+        grid_size=16,
+        init_defender_position=[8,8],
+        init_attacker_position=[1,1],
+        goal_position=[8,8],
+        capture_radius=2
     )
 
     # Hyperparameters
-    learning_rate = config['hyperparameters']['learning_rate']
+    learning_rate = 0.001 #0.01 # config['hyperparameters']['learning_rate']
     gamma = config['hyperparameters']['gamma']
     epsilon_start = config['hyperparameters']['epsilon_start']
     epsilon_end = config['hyperparameters']['epsilon_end']
@@ -888,9 +882,9 @@ if __name__ == "__main__":
 
     # Training parameters
     batch_multiple = config['training']['batch_multiple']  # the batch size will be num_parallel * batch_multiple
-    num_episodes = config['training']['num_episodes']
+    num_episodes = 6401 #config['training']['num_episodes']
     loaded_params = config['training']['loaded_params']
-    num_parallel = config['training']['num_parallel'] #mp.cpu_count()
+    num_parallel = 32 #mp.cpu_count()
     if num_parallel != config['training']['num_parallel']: 
         ValueError("num_parallel in config file does not match the number of cores on this machine")
     print("cpu_count", num_parallel, "config", config['training']['num_parallel'])
@@ -901,7 +895,7 @@ if __name__ == "__main__":
 
     # Logging
     print(game_type, " starting experiment at :", timestamp)
-    writer = SummaryWriter(f"runs_reverse/experiment_{game_type}" + timestamp+"_reverse")
+    writer = SummaryWriter(f"runs_grid/experiment_{game_type}" + timestamp+"_reverse")
     #Load data (deserialize)
     # with open('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-09-15 10:22:44.481035_episode_12224_params.pickle', 'rb') as handle:
     #     loaded_params = pickle.load(handle)
