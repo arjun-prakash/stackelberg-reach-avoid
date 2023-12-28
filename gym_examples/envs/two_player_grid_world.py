@@ -17,6 +17,7 @@ class TwoPlayerGridWorldEnv:
         self.init_attacker_position = init_attacker_position
         self.init_defender_position = init_defender_position
         self.goal_position = goal_position
+        self.goal_radius = 1
         self.capture_radius = capture_radius
         self.num_actions = 4  # Up, Down, Left, Right
         self.max_steps=50
@@ -49,9 +50,13 @@ class TwoPlayerGridWorldEnv:
         info = {'player': player, 'is_legal':True, 'status':'running'}
 
 
-        if np.array_equal(next_state['attacker'], self.goal_position):
-            reward = 10  # Attacker wins
+        #if attacker reaches goal
+        if distance_to_goal < self.goal_radius:
+            if player == 'attacker':
+                info = {'player': player, 'is_legal':True, 'status':'attacker reached goal'}
+            reward = 100  # Attacker wins
             done = True
+
         elif np.linalg.norm(next_state['attacker'] - next_state['defender']) <= self.capture_radius:
             if player == 'attacker':
                 info = {'player': player, 'is_legal':False, 'status':'attacker collided with defender'}
@@ -96,7 +101,7 @@ class TwoPlayerGridWorldEnv:
             self.state['defender'] = np.array(defender_pos)
 
             # ensure that the attacker is at least 2 steps away from the goal
-            while np.linalg.norm(self.state['attacker'] - self.goal_position) <= self.capture_radius:
+            while np.linalg.norm(self.state['attacker'] - self.goal_position) <= self.goal_radius + 3:
                 key, subkey1, subkey2 = jax.random.split(subkey1, 3)
 
                 attacker_pos = jax.random.randint(subkey1, (2,), 0, self.grid_size)

@@ -383,6 +383,10 @@ def parallel_stackelberg_reinforce(
                 jax.nn.relu,
                 hk.Linear(64),
                 jax.nn.relu,
+                hk.Linear(64),
+                jax.nn.relu,
+                hk.Linear(64),
+                jax.nn.relu,
                 hk.Linear(env.num_actions),
                 jax.nn.softmax,
             ]
@@ -525,14 +529,14 @@ if __name__ == "__main__":
 
     # Logging
     print(game_type, " starting experiment at :", timestamp)
-    writer = SummaryWriter(f"runs_grid/experiment_{game_type}" + timestamp+"_bellman_error_fix")
+    writer = SummaryWriter(f"runs_grid2/experiment_{game_type}" + timestamp+"_bellman_error_fix")
 
     import glob
     import pickle
 
     # Get a list of all files in the directory
     #files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-09-19 15:18:57.090737_episode_*_params.pickle')
-    files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_grid_stackelberg/2023-12-21 17:29:47.709882_episode_*_params.pickle')
+    files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_grid_stackelberg/2023-12-28 01:02:09.757833_episode_*_params.pickle')
 
     files.sort(key=lambda x: int(x.split('_episode_')[1].split('_params')[0]))
     files = files
