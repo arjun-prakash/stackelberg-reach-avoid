@@ -23,7 +23,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         self.num_actions = num_actions #3
         self.action_space = {'attacker':spaces.Discrete(self.num_actions), 'defender':spaces.Discrete(self.num_actions)}
 
-        self.size = size #4
+        self.size = 3#4
         self.reward = reward #1
         self.max_steps = max_steps# 50
 
@@ -47,7 +47,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         self.positions = {'attacker': [], 'defender': []}
         
 
-    def reset(self, key=None):
+    def reset_camera(self, key=None):
         """
         Reset the environment and return the initial state
         """
@@ -93,8 +93,72 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         return self.state
 
 
-        self.goal_position = self.goal_position
+    
+    def reset(self, key=None):
+
+        """
+        Reset the environment and return the initial state
+        """
+        
+        #if key not none start at initial positions
+        if key is None:
+            self.state['attacker'] = np.array(self.init_attacker_position, dtype=self.observation_space['attacker'].dtype)
+            self.state['defender'] = np.array(self.init_defender_position, dtype=self.observation_space['defender'].dtype)
+
+        else:
+            # Split the key for attacker and defender
+            key, subkey1, subkey2 = jax.random.split(key, 3)
+
+
+            #random attacker x,y, theta
+            attacker_x = jax.random.uniform(subkey1, minval=-self.size, maxval=self.size)
+            attacker_y = jax.random.uniform(subkey1, minval=0, maxval=self.size)
+            attacker_theta = jax.random.uniform(subkey1, minval=0, maxval=2*np.pi)
+
+            #random defender x,y, theta
+            defender_x = jax.random.uniform(subkey2, minval=0, maxval=0)
+            defender_y = jax.random.uniform(subkey2, minval=-2, maxval=-2)
+            defender_theta = jax.random.uniform(subkey2, minval=0, maxval=2*np.pi)
+
+            #set the state
+            self.state['attacker'] = np.array([attacker_x, attacker_y, attacker_theta], dtype=self.observation_space['attacker'].dtype)
+            self.state['defender'] = np.array([defender_x, defender_y, defender_theta], dtype=self.observation_space['defender'].dtype)
+
+            
+            while np.linalg.norm(self.state['attacker'][:2] - self.state['defender'][:2]) <= self.capture_radius:
+                # generate new subkeys for attacker and defender
+                key, subkey1, subkey2 = jax.random.split(subkey1, 3)
+
+                #random attacker x,y, theta
+                attacker_x = jax.random.uniform(subkey1, minval=-self.size, maxval=self.size)
+                attacker_y = jax.random.uniform(subkey1, minval=0, maxval=self.size)
+                attacker_theta = jax.random.uniform(subkey1, minval=0, maxval=2*np.pi)
+
+                #random defender x,y, theta
+                defender_x = jax.random.uniform(subkey2, minval=0, maxval=0)
+                defender_y = jax.random.uniform(subkey2, minval=-2, maxval=-2)
+                defender_theta = jax.random.uniform(subkey2, minval=0, maxval=2*np.pi)
+
+                #set the state
+                self.state['attacker'] = np.array([attacker_x, attacker_y, attacker_theta], dtype=self.observation_space['attacker'].dtype)
+                self.state['defender'] = np.array([defender_x, defender_y, defender_theta], dtype=self.observation_space['defender'].dtype)
+
+
+                # ensure that the attacker is at least 2 steps away from the goal
+                while np.linalg.norm(self.state['attacker'][:2] - self.goal_position) <= self.goal_radius + 3:
+                    key, subkey1, subkey2 = jax.random.split(subkey1, 3)
+
+                    #random attacker x,y, theta
+                    attacker_x = jax.random.uniform(subkey1, minval=-self.size, maxval=self.size)
+                    attacker_y = jax.random.uniform(subkey1, minval=-self.size, maxval=self.size)
+                    attacker_theta = jax.random.uniform(subkey1, minval=0, maxval=2*np.pi)
+
+                    self.state['attacker'] = np.array([attacker_x, attacker_y, attacker_theta], dtype=self.observation_space['attacker'].dtype)
+
+
+
         return self.state
+
     
     def set(self, ax, ay, atheta, dx=0., dy=0., dtheta=0.):
         """
@@ -158,7 +222,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
 
 
-
+        ## wrapping around
         # if next_state[player][0] < self.observation_space[player].low[0]:
         #     next_state[player][0] = self.observation_space[player].high[0]
         # elif next_state[player][0] > self.observation_space[player].high[0]:
@@ -240,7 +304,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                 return next_state, reward, done, info
        
         if dist_goal < self.goal_radius:
-            reward = 100 #reward
+            reward = 200
             done = True
             info = {'player': player, 'is_legal':True, 'status':'goal_reached'}
 
@@ -626,7 +690,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         
     def single_rollout(self,args):
         #print("env state" , self.state)
-        game_type, params, policy_net, key, epsilon, gamma, render, for_q_value, one_step_reward = args
+        game_type, params, policy_net, key, epsilon, gamma, render, for_q_value, one_step_reward, state = args
 
         if game_type != self.game_type:
             raise ValueError(f"game_type {game_type} does not match self.game_type {self.game_type}")
@@ -649,8 +713,12 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         attacker_no_legal_moves = False
 
 
-        state = self.state
+        if state == None:
+            state = self.state
         #state = self.reset()
+        else:
+            self.state = state
+
 
         if for_q_value:
             #append 0 to rewards

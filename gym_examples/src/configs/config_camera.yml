@@ -8,9 +8,9 @@ env:
   max_steps: 50
   init_defender_position: [0.,-1,1.571] 
   init_attacker_position: [0,3.5, 4.712] 
-  goal_position: [0,-3] 
+  goal_position: [0,-4] 
   goal_radius: 1.0
-  capture_radius: 0.5
+  capture_radius: 0.25
   timestep: 1
   velocity: 0.25
   turning_angle: 65
@@ -29,7 +29,7 @@ hyperparameters:
 training:
   batch_multiple: 1
   num_parallel: 32
-  num_episodes: 12801
+  num_episodes: 5000
   loaded_params: None
   
 
