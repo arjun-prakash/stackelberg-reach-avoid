@@ -28,6 +28,7 @@ from torch.utils.tensorboard import SummaryWriter
 import yaml
 #import pandas as pd
 import cvxpy as cp
+import itertools
 
 
 def solve_stackelberg_game(q_values_data):
@@ -67,6 +68,7 @@ def solve_stackelberg_game(q_values_data):
         "Defender's Optimal Strategy": defender_strategy_cvxpy,
         "Payoff": prob.value
     }
+    
 
 def parallel_rollouts(
     env,
@@ -79,10 +81,11 @@ def parallel_rollouts(
     render=False,
     for_q_value=False,
     reward=None,
+    state=None,
 ):
     keys = jax.random.split(key, num_rollouts)
     args = [
-        (env.game_type, params, policy_net, k, epsilon, gamma, render, for_q_value, reward)
+        (env.game_type, params, policy_net, k, epsilon, gamma, render, for_q_value, reward, state)
         for k in keys
     ]
     with ProcessPool() as pool:
@@ -104,9 +107,22 @@ def parallel_rollouts(
         all_wins,
     )
 
-def get_values(env, params, policy_net, key, num_rollouts, epsilon, gamma):
-        initial_state = env.reset(key)
-        #print('initial_state values', env.state)
+def get_values(env, params, policy_net, grid_state, num_rollouts, key, epsilon, gamma):
+        
+        #initial_state = env.set(grid_state[0], grid_state[1], grid_state[2], grid_state[3])
+        state = env.reset(key)
+        # args = (env.game_type, params, policy_net, key, epsilon, gamma, False, False, 0, None)
+
+        # #print('initial_state values', env.state)
+        # states, actions, action_masks, returns, masks, wins = env.single_rollout(
+        #     args
+        # )
+        # print('actions')
+        # print(actions)
+        # attacker_returns = returns["attacker"][0]
+        # v = attacker_returns
+        # return v
+
         states, actions, action_masks, returns, masks, wins = parallel_rollouts(
             env,
             params,
@@ -117,29 +133,56 @@ def get_values(env, params, policy_net, key, num_rollouts, epsilon, gamma):
             gamma,
             render=False,
             for_q_value=False,
-            reward=None
+            reward=None,
+            state=state
         )
-        # print('actions')
-        # print(actions)
+        print('actions')
+        #print(actions)
         attacker_returns = [r["attacker"][0] for r in returns]
         v = np.mean(attacker_returns)
         return v
 
-def get_q_values(env, params, policy_net, key, num_rollouts, epsilon, gamma):
+def get_q_values(env, params, policy_net, grid_state, num_rollouts, key, epsilon, gamma):
 
+    # move_list = []
+    # _ = env.reset()
+    # for d_action in range(env.num_actions):
+    #     initial_state = env.reset()
+    #     #print('initial_state', initial_state)
+
+    #     #initial_state = env.set(grid_state[0], grid_state[1], grid_state[2], grid_state[3])
+    #     #print('initial_state q_values', initial_state)
+    #     defender_state, d_reward, _, _ = env.step(
+    #         initial_state, 0, "defender", update_env=False
+    #     )
+    #     defender_state_cp = copy.deepcopy(defender_state)
+    #     _ = env.reset()
+    #     for a_action in range(env.num_actions):
+    #         _ = env.reset()
+    #         attacker_state, reward, _, _ = env.step(
+    #             defender_state_cp, 3, "attacker", update_env=False
+    #         )
+    #         _ = env.set_to(defender_state_cp)
+    #         attacker_state_cp = copy.deepcopy(attacker_state)
+    #         print('state_cp', attacker_state_cp)
+    #         args = (env.game_type, params, policy_net, key, epsilon, gamma, False, True, reward, attacker_state_cp)
+
+    #         states, actions, action_masks, returns, masks, wins = env.single_rollout(args)
+
+    attacker_moves = [0,1,2]
+    defender_moves = [0,1,2]
     move_list = []
-    for d_action in range(env.action_space["defender"].n):
+
+    #cross product of moves
+    moves = itertools.product(defender_moves, attacker_moves)
+
+    for move in moves:
         initial_state = env.reset(key)
-        #print('initial_state q_values', initial_state)
-        defender_state, d_reward, _, _ = env.step(
-            initial_state, d_action, "defender", update_env=True
-        )
-        for a_action in range(env.action_space["attacker"].n):
-            state, reward, _, _ = env.step(
-                defender_state, a_action, "attacker", update_env=True
-            )
-            #print('state after step', state)
-            states, actions, action_masks, returns, masks, wins = parallel_rollouts(
+        defender_state, d_reward, _, _ = env.step(initial_state, move[0], "defender", update_env=False)
+        attacker_state, reward, _, _ = env.step(defender_state, move[1], "attacker", update_env=False)
+        args = (env.game_type, params, policy_net, key, epsilon, gamma, False, True, reward, attacker_state)
+        #states, actions, action_masks, returns, masks, wins = env.single_rollout(args)
+        states, actions, action_masks, returns, masks, wins = parallel_rollouts(
                 env,
                 params,
                 policy_net,
@@ -149,21 +192,31 @@ def get_q_values(env, params, policy_net, key, num_rollouts, epsilon, gamma):
                 gamma,
                 render=False,
                 for_q_value=True,
-                reward=reward
+                reward=reward,
+                state=attacker_state
             )
-            attacker_returns = [r["attacker"][0] for r in returns]
-            mean_attacker_returns = np.mean(attacker_returns)
-            move_list.append(
-                {
-                    "defender": d_action,
-                    "attacker": a_action,
-                    "q_value": mean_attacker_returns,
-                }
-            )
+            
+            
+        # attacker_returns = returns["attacker"][0]
+        # print(attacker_returns)
+        # mean_attacker_returns = attacker_returns
+
+        attacker_returns = [r["attacker"][0] for r in returns]
+        mean_attacker_returns = np.mean(attacker_returns)
+        move_list.append(
+            {
+                "defender": move[0],
+                "attacker": move[1],
+                "q_value": mean_attacker_returns,
+            }
+        )
+    print('move_list')
     print(move_list)
     q_values = np.array([move["q_value"] for move in move_list]).reshape(
         env.num_actions, env.num_actions
     )
+    print(q_values)
+
     best_attacker_moves = np.argmax(q_values, axis=1)
     best_defender_move = np.argmin(np.max(q_values, axis=1))
     best_attacker_move = best_attacker_moves[best_defender_move]
@@ -174,27 +227,38 @@ def get_q_values(env, params, policy_net, key, num_rollouts, epsilon, gamma):
     return arg_min_max_q, mixed_q
 
 def calc_bellman_error(env, params, policy_net, num_rollouts, key, epsilon, gamma):
+    x_a = np.linspace(1, 1, 1)
+    y_a = np.linspace(1, 1, 1)
+    x_d = np.linspace(8, 8, 1)
+    y_d = np.linspace(8, 8, 1)
 
-    
+
+    xxa, yya, xxd, yyd = np.meshgrid(x_a, y_a, x_d, y_d)
+    grid = np.vstack(
+        [
+            xxa.ravel(),
+            yya.ravel(),
+            xxd.ravel(),
+            yyd.ravel(),
+        ]
+    ).T
+
     v_vector = []
     arg_min_max_q_vector = []
     mixed_q_vector = []
-
-    subkeys = jax.random.split(key, 1)
-
-    for s in tqdm(subkeys):
+    for g in tqdm(grid):
         v = get_values(
-            env, params, policy_net, s, num_rollouts, epsilon, gamma
+            env, params, policy_net, g, num_rollouts, key, epsilon, gamma
         )
         v_vector.append(v)
 
-        arg_min_max_q, mixed_q = get_q_values(
-            env, params, policy_net, s, num_rollouts, epsilon, gamma
-        )
-        arg_min_max_q_vector.append(arg_min_max_q)
-        mixed_q_vector.append(mixed_q)
+    arg_min_max_q, mixed_q = get_q_values(
+        env, params, policy_net, g, num_rollouts, key, epsilon, gamma
+    )
+    arg_min_max_q_vector.append(arg_min_max_q)
+    mixed_q_vector.append(mixed_q)
 
-    return np.array(arg_min_max_q_vector), mixed_q_vector ,np.array(v_vector)
+    return np.array(arg_min_max_q_vector), mixed_q_vector ,np.array(v_vector)#np.linalg.norm(np.array(q_vector) - np.array(v_vector))
 
 def parallel_nash_reinforce(
     env,
@@ -224,6 +288,10 @@ def parallel_nash_reinforce(
     def policy_network(observation):
         net = hk.Sequential(
             [
+                hk.Linear(64),
+                jax.nn.relu,
+                hk.Linear(64),
+                jax.nn.relu,
                 hk.Linear(64),
                 jax.nn.relu,
                 hk.Linear(64),
@@ -331,6 +399,10 @@ def parallel_stackelberg_reinforce(
                 jax.nn.relu,
                 hk.Linear(64),
                 jax.nn.relu,
+                hk.Linear(64),
+                jax.nn.relu,
+                hk.Linear(64),
+                jax.nn.relu,
                 hk.Linear(env.num_actions),
                 jax.nn.softmax,
             ]
@@ -357,8 +429,41 @@ def parallel_stackelberg_reinforce(
         with open(file, 'rb') as handle:
             loaded_params = pickle.load(handle)
             episode = int(file.split('_episode_')[1].split('_params')[0])
-            key = jax.random.PRNGKey((episode+1)*seed)
-            arg_min_max_q, mixed_q, v = calc_bellman_error(env, loaded_params, policy_net, num_eval_episodes, key, epsilon_start, gamma)
+            #arg_min_max_q, mixed_q, v = calc_bellman_error(env, loaded_params, policy_net, num_eval_episodes, jax.random.PRNGKey(episode), epsilon_start, gamma)
+
+            key = jax.random.PRNGKey(episode)
+            args = (env.game_type, loaded_params, policy_net, key, epsilon_start, gamma, False, False, 0, None)
+                
+            states, actions, action_masks, returns, padding_mask, wins = env.single_rollout(args)
+
+            print('Values Rollout')
+            print('actions', actions)
+            print('returns', returns)
+
+            reward_v = returns['attacker'][0]
+            
+
+            print('Q Values Rollout')
+            state = env.reset(key)
+
+            state, reward, _, _ = env.step(
+                state, 0, "defender", update_env=True
+            )
+            state, reward, _, _ = env.step(
+                state, 3, "attacker", update_env=True
+            )
+
+            args = (env.game_type, loaded_params, policy_net, key, epsilon_start, gamma, False, True, reward, None)
+            states, actions, action_masks, returns, padding_mask, wins = env.single_rollout(args)
+            reward_q = returns['attacker'][0]
+
+            print('actions', actions)
+            print('returns', returns)
+
+            print('Bellman Error')
+            print(reward_v - reward_q)
+
+            arg_min_max_q, mixed_q, v = calc_bellman_error(env, loaded_params, policy_net, num_eval_episodes, jax.random.PRNGKey(episode), epsilon_start, gamma)
             arg_q_norm = np.linalg.norm(arg_min_max_q)
             mixed_q_norm = np.linalg.norm(mixed_q)
             v_norm = np.linalg.norm(v)
@@ -368,9 +473,6 @@ def parallel_stackelberg_reinforce(
             print('mixedq:', mixed_q)
             print('v:', v)
             print('bellman_error:', mixed_bellman_error)
-            # writer.add_scalar('q_norm', q_norm, episode)
-            # writer.add_scalar('v_norm', v_norm, episode)
-            # writer.add_scalar('bellman_error', bellman_error, episode)
 
             writer.add_scalars(
                 "values",
@@ -381,8 +483,7 @@ def parallel_stackelberg_reinforce(
                     "arg bellman": arg_bellman_error,
                     "mixed bellman": mixed_bellman_error,
                 },
-                episode,
-            )
+                episode,)
             be_list.append({'mixed': mixed_bellman_error, 'episode': episode, 'seed': seed})
             # #_ = env.reset()
             # (
@@ -474,7 +575,7 @@ if __name__ == "__main__":
 
     # Logging
     print(game_type, " starting experiment at :", timestamp)
-    writer = SummaryWriter(f"runs5/experiment_{game_type}" + timestamp+"_bellman_error_camera")
+    writer = SummaryWriter(f"runs_6_baseline/experiment_{game_type}" + timestamp+"_bellman_error_camera")
 
     import glob
     import pickle
@@ -484,10 +585,12 @@ if __name__ == "__main__":
     files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-09-23 17:38:30.650545_episode_*_params.pickle') #camera stackelberg
     #files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_nash/2023-09-26 12:53:29.888866_episode_*_params.pickle') #camera nash
 
+    files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-12-29 04:20:51.937315_episode_*_params.pickle') #baseline pg
+
 
     files.sort(key=lambda x: int(x.split('_episode_')[1].split('_params')[0]))
 
-    files = files[:10] + files[10::10]
+    #files = files[:10] + files[10::10]
     #files = files[:17]
     print(files)
     print('length', len(files))
@@ -495,7 +598,7 @@ if __name__ == "__main__":
     # Now params_list contains the parameters from all episodes
     # Training
 
-    seeds = [11,12,13,14,15]
+    seeds = [11]
     be_list = []
     for seed in seeds:
         print('seed', seed)
