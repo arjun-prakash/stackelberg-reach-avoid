@@ -220,11 +220,16 @@ def parallel_nash_reinforce(
 
         return np.linalg.norm(np.array(q_vector) - np.array(v_vector))
 
-    def save_params(episode_num, params, game_type, timestamp):
+    def save_params(episode_num, params, value_params, game_type, timestamp):
         with open(
             f"data/experiment_{game_type}/{timestamp}_episode_{episode_num}_params.pickle", "wb"
         ) as handle:
             pickle.dump(params, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+        with open(
+            f"data/experiment_{game_type}/{timestamp}_episode_{episode_num}_value_params.pickle", "wb"
+        ) as handle:
+            pickle.dump(value_params, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     def policy_network(observation):
         net = hk.Sequential(
@@ -636,11 +641,16 @@ def parallel_stackelberg_reinforce(
 
         return np.linalg.norm(np.array(q_vector) - np.array(v_vector))
 
-    def save_params(episode_num, params, game_type, timestamp):
+    def save_params(episode_num, params, value_params, game_type, timestamp):
         with open(
             f"data/experiment_{game_type}/{timestamp}_episode_{episode_num}_params.pickle", "wb"
         ) as handle:
             pickle.dump(params, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+        with open(
+            f"data/experiment_{game_type}/{timestamp}_episode_{episode_num}_value_params.pickle", "wb"
+        ) as handle:
+            pickle.dump(value_params, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     def policy_network(observation, legal_moves):
         net = hk.Sequential(
@@ -804,7 +814,7 @@ def parallel_stackelberg_reinforce(
                 ]
             )
             env.make_gif(f"gifs/dub_debug/{timestamp}_{episode}.gif")
-            save_params(episode, params, "stackelberg", timestamp)
+            save_params(episode, params,value_params, "stackelberg", timestamp)
 
             # bellman_error = calc_bellman_error(env, params, policy_net, num_eval_episodes, jax.random.PRNGKey(episode), epsilon, gamma)
             # print('bellman_error', bellman_error)
@@ -822,10 +832,20 @@ def parallel_stackelberg_reinforce(
         # else:
         #     training_player = 'attacker'
 
+        #this is the original
+        # if episode % 4 == 0:
+        #     training_player = 'defender'
+        # else:
+        #     training_player = 'attacker'
+
+        #alternate players every 4th episode
         if episode % 4 == 0:
-            training_player = 'defender'
-        else:
-            training_player = 'attacker'
+            training_player = env.players[
+                 (env.players.index(training_player) + 1) % len(env.players)
+            ]  # switch trining player
+
+
+
 
         if (episode + 1) % batch_multiple == 0 and valid:
             print("training", training_player)
