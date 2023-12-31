@@ -588,13 +588,14 @@ if __name__ == "__main__":
     files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-09-23 17:38:30.650545_episode_*_params.pickle') #camera stackelberg
     #files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_nash/2023-09-26 12:53:29.888866_episode_*_params.pickle') #camera nash
 
-    files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-12-31 04:27:56.425064_episode_*_params.pickle') #baseline pg
-
+    files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-12-31 07:43:56.196401_episode_*_params.pickle') #baseline pg
+    files = files[::2] #remove the value
+    print(files)
 
     files.sort(key=lambda x: int(x.split('_episode_')[1].split('_params')[0]))
 
     #files = files[:10] + files[10::10]
-    #files = files[-1:]
+    files = [files[0], files[-1]]
     print(files)
     print('length', len(files))
 
