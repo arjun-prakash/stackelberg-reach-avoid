@@ -633,13 +633,17 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         return jnp.array(legal_actions_mask)
 
     def constrained_select_action(self, nn_state, policy_net, params, legal_actions_mask, key, epsilon):
+        #print('FUNC')
         if jax.random.uniform(key) < epsilon:
             legal_actions_indices = jnp.arange(len(legal_actions_mask))[legal_actions_mask.astype(bool)]
             return jax.random.choice(key, legal_actions_indices)
         else:
             probs = policy_net.apply(params, nn_state, legal_actions_mask)
             #action = jax.random.categorical(key, probs)
+            #print(nn_state)
+            #print('probs', probs)
             action = jax.random.choice(key, a=self.num_actions, p=probs)
+            #print('key', key, 'action', action)
             return action
         
     def constrained_deterministic_select_action(self, nn_state, policy_net, params, legal_actions_mask, key, epsilon):
@@ -757,7 +761,8 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
                             #action = self.constrained_deterministic_select_action(nn_state, policy_net, params[player], legal_actions_mask, subkey, epsilon)
                         #action = self.constrained_select_action(nn_state, policy_net, params[player], legal_actions_mask, subkey, epsilon)
-
+                        #print(nn_state, player, action)
+                        #print(subkey)
                         action_masks[player].append(legal_actions_mask)
                         state, reward, done, info = self.step(state=state, action=action, player=player, update_env=True)
                         nn_state = self.encode_helper(state)

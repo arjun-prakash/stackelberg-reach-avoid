@@ -83,7 +83,7 @@ def parallel_rollouts(
     reward=None,
     state=None,
 ):
-    keys = jax.random.split(key, num_rollouts)
+    keys = jax.random.split(key, num_rollouts*2)
     args = [
         (env.game_type, params, policy_net, k, epsilon, gamma, render, for_q_value, reward, state)
         for k in keys
@@ -227,36 +227,23 @@ def get_q_values(env, params, policy_net, grid_state, num_rollouts, key, epsilon
     return arg_min_max_q, mixed_q
 
 def calc_bellman_error(env, params, policy_net, num_rollouts, key, epsilon, gamma):
-    x_a = np.linspace(1, 1, 1)
-    y_a = np.linspace(1, 1, 1)
-    x_d = np.linspace(8, 8, 1)
-    y_d = np.linspace(8, 8, 1)
-
-
-    xxa, yya, xxd, yyd = np.meshgrid(x_a, y_a, x_d, y_d)
-    grid = np.vstack(
-        [
-            xxa.ravel(),
-            yya.ravel(),
-            xxd.ravel(),
-            yyd.ravel(),
-        ]
-    ).T
+    
+    grid = jax.random.split(key, num_rollouts)
 
     v_vector = []
     arg_min_max_q_vector = []
     mixed_q_vector = []
     for g in tqdm(grid):
         v = get_values(
-            env, params, policy_net, g, num_rollouts, key, epsilon, gamma
+            env, params, policy_net, g, num_rollouts, g, epsilon, gamma
         )
         v_vector.append(v)
 
-    arg_min_max_q, mixed_q = get_q_values(
-        env, params, policy_net, g, num_rollouts, key, epsilon, gamma
-    )
-    arg_min_max_q_vector.append(arg_min_max_q)
-    mixed_q_vector.append(mixed_q)
+        arg_min_max_q, mixed_q = get_q_values(
+            env, params, policy_net, g, num_rollouts, g, epsilon, gamma
+        )
+        arg_min_max_q_vector.append(arg_min_max_q)
+        mixed_q_vector.append(mixed_q)
 
     return np.array(arg_min_max_q_vector), mixed_q_vector ,np.array(v_vector)#np.linalg.norm(np.array(q_vector) - np.array(v_vector))
 
@@ -432,33 +419,40 @@ def parallel_stackelberg_reinforce(
             #arg_min_max_q, mixed_q, v = calc_bellman_error(env, loaded_params, policy_net, num_eval_episodes, jax.random.PRNGKey(episode), epsilon_start, gamma)
 
             key = jax.random.PRNGKey(episode)
-            args = (env.game_type, loaded_params, policy_net, key, epsilon_start, gamma, False, False, 0, None)
+            state = env.reset(key)
+            #print('v-state', state)
+            args = (env.game_type, loaded_params, policy_net, key, epsilon_start, gamma, False, False, 0, state)
                 
             states, actions, action_masks, returns, padding_mask, wins = env.single_rollout(args)
 
             print('Values Rollout')
             print('actions', actions)
-            print('returns', returns)
+            # print('returns', returns)
+          #  print('v-state defender', states['defender'])
 
             reward_v = returns['attacker'][0]
             
 
             print('Q Values Rollout')
             state = env.reset(key)
-
+            #print('q-state1', env.encode_helper(state))
             state, reward, _, _ = env.step(
-                state, 0, "defender", update_env=True
+                state, 1, "defender", update_env=False
             )
+            #print('q-state2',env.encode_helper(state))
             state, reward, _, _ = env.step(
-                state, 3, "attacker", update_env=True
+                state, 1, "attacker", update_env=False
             )
+            #print('q-state3',env.encode_helper(state))
 
-            args = (env.game_type, loaded_params, policy_net, key, epsilon_start, gamma, False, True, reward, None)
+
+            args = (env.game_type, loaded_params, policy_net, key, epsilon_start, gamma, False, True, reward, state)
             states, actions, action_masks, returns, padding_mask, wins = env.single_rollout(args)
             reward_q = returns['attacker'][0]
+            #print('q-state defender', states['defender'])
 
-            print('actions', actions)
-            print('returns', returns)
+            #print('actions', actions['attacker'])
+            # print('returns', returns)
 
             print('Bellman Error')
             print(reward_v - reward_q)
@@ -469,10 +463,17 @@ def parallel_stackelberg_reinforce(
             v_norm = np.linalg.norm(v)
             arg_bellman_error = np.linalg.norm(arg_min_max_q-v)
             mixed_bellman_error = np.linalg.norm(mixed_q-v)
+            mixed_bellman_mean = np.mean(np.abs(mixed_q - v))
+            arg_bellman_mean = np.mean(np.abs(arg_min_max_q - v))
+            
+
             print('argq:', arg_min_max_q)
             print('mixedq:', mixed_q)
             print('v:', v)
+            print('diff', mixed_q - v)
             print('bellman_error:', mixed_bellman_error)
+            print('bellman_error mean:', mixed_bellman_mean)
+            print('arg_bellman_error:', arg_bellman_mean)
 
             writer.add_scalars(
                 "values",
@@ -482,31 +483,33 @@ def parallel_stackelberg_reinforce(
                     "v_norm": v_norm,
                     "arg bellman": arg_bellman_error,
                     "mixed bellman": mixed_bellman_error,
+                    "mixed bellman mean": mixed_bellman_mean,
+                    "arg bellman mean": arg_bellman_mean,
                 },
                 episode,)
             be_list.append({'mixed': mixed_bellman_error, 'episode': episode, 'seed': seed})
-            # #_ = env.reset()
-            # (
-            #     states,
-            #     actions,
-            #     action_masks,
-            #     returns,
-            #     padding_mask,
-            #     wins,
-            # ) = env.single_rollout(
-            #     [
-            #         'stackelberg',
-            #         loaded_params,
-            #         policy_net,
-            #         jax.random.PRNGKey(42),
-            #         epsilon_start,
-            #         gamma,
-            #         True,
-            #         False,
-            #         None,
-            #     ]
-            # )
-            # env.make_gif(f"gifs/debug/{timestamp}_{episode}.gif")
+            # # #_ = env.reset()
+            # # (
+            # #     states,
+            # #     actions,
+            # #     action_masks,
+            # #     returns,
+            # #     padding_mask,
+            # #     wins,
+            # # ) = env.single_rollout(
+            # #     [
+            # #         'stackelberg',
+            # #         loaded_params,
+            # #         policy_net,
+            # #         jax.random.PRNGKey(42),
+            # #         epsilon_start,
+            # #         gamma,
+            # #         True,
+            # #         False,
+            # #         None,
+            # #     ]
+            # # )
+            # # env.make_gif(f"gifs/debug/{timestamp}_{episode}.gif")
     return be_list
 
 
@@ -571,7 +574,7 @@ if __name__ == "__main__":
 
     # Evaluation parameters
     eval_interval = config['eval']['eval_interval']
-    num_eval_episodes = config['eval']['num_eval_episodes']
+    num_eval_episodes = 32 #config['eval']['num_eval_episodes']
 
     # Logging
     print(game_type, " starting experiment at :", timestamp)
@@ -585,13 +588,13 @@ if __name__ == "__main__":
     files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-09-23 17:38:30.650545_episode_*_params.pickle') #camera stackelberg
     #files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_nash/2023-09-26 12:53:29.888866_episode_*_params.pickle') #camera nash
 
-    files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-12-29 04:20:51.937315_episode_*_params.pickle') #baseline pg
+    files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-12-31 04:27:56.425064_episode_*_params.pickle') #baseline pg
 
 
     files.sort(key=lambda x: int(x.split('_episode_')[1].split('_params')[0]))
 
     #files = files[:10] + files[10::10]
-    #files = files[:17]
+    #files = files[-1:]
     print(files)
     print('length', len(files))
 

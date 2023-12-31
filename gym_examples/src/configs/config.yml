@@ -10,7 +10,7 @@ env:
   init_attacker_position: [0,3.5, 4.712] 
   goal_position: [0,-3] 
   goal_radius: 1.0
-  capture_radius: 0.5
+  capture_radius: 0.3
   timestep: 1
   velocity: 0.25
   turning_angle: 65
