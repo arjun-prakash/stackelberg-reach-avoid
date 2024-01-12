@@ -22,6 +22,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import optax
 from envs.two_player_dubins_car import TwoPlayerDubinsCarEnv
+from envs.two_player_dubins_car_pe import TwoPlayerDubinsCarPEEnv
 from matplotlib import cm
 from PIL import Image
 from torch.utils.tensorboard import SummaryWriter
@@ -47,46 +48,76 @@ def parallel_nash_reinforce(
     # Define loss function
     # Define loss function
     @jax.jit
-    def loss_attacker(params, observations, actions, returns, mask):
+    def loss_attacker(
+        params, value_params, observations, actions, returns, padding_mask
+    ):
         action_probabilities = policy_net.apply(params, observations)
-        log_probs = jnp.log(
-            jnp.take_along_axis(
+        #action_probabilities = jax.nn.softmax(action_probabilities)
+        log_probs = jnp.log(jnp.take_along_axis(
                 action_probabilities + 10e-6, actions[..., None], axis=-1
             )
         )
-        log_probs = log_probs.reshape(returns.shape)
-        masked_loss = mask * (-log_probs * jax.lax.stop_gradient(returns))
-        return jnp.sum(masked_loss) / jnp.sum(mask)
 
+        # Get baseline values
+        baseline_values = value_net.apply(value_params, observations).squeeze(-1)
+        print('baseline_values', baseline_values)
+        print('returns', returns)
+        advantage = returns - baseline_values
+            
+        log_probs = log_probs.reshape(returns.shape)
+        masked_loss = padding_mask * (-log_probs * jax.lax.stop_gradient(advantage))
+        return jnp.sum(masked_loss) / jnp.sum(padding_mask)
+    
     @jax.jit
-    def loss_defender(params, observations, actions, returns, mask):
+    def loss_defender(
+        params, value_params, observations, actions, returns, padding_mask
+    ):
         action_probabilities = policy_net.apply(params, observations)
-        log_probs = jnp.log(
-            jnp.take_along_axis(
+        #action_probabilities = jax.nn.softmax(action_probabilities)
+        log_probs = jnp.log(jnp.take_along_axis(
                 action_probabilities + 10e-6, actions[..., None], axis=-1
             )
         )
+        # Get baseline values
+        baseline_values = value_net.apply(value_params, observations)
+        advantage = returns - baseline_values.squeeze(-1)
+
         log_probs = log_probs.reshape(returns.shape)
-        masked_loss = mask * (log_probs * jax.lax.stop_gradient(returns))
-        return jnp.sum(masked_loss) / jnp.sum(mask)
+        masked_loss = padding_mask * (log_probs * jax.lax.stop_gradient(advantage))
+        return jnp.sum(masked_loss) / jnp.sum(padding_mask)
 
     # Define update function
 
     @jax.jit
-    def update_defender(params, opt_state, observations, actions, returns, mask):
-        grads = jax.grad(loss_defender)(params, observations, actions, returns, mask)
+    def update_defender(params, value_params, opt_state, observations, actions, returns, mask):
+        grads = jax.grad(loss_defender)(params, value_params, observations, actions, returns, mask)
         updates, opt_state = optimizer["defender"].update(
             grads, params=params, state=opt_state
         )
         return optax.apply_updates(params, updates), opt_state, grads
 
     @jax.jit
-    def update_attacker(params, opt_state, observations, actions, returns, mask):
-        grads = jax.grad(loss_attacker)(params, observations, actions, returns, mask)
+    def update_attacker(params, value_params, opt_state, observations, actions, returns, mask):
+        grads = jax.grad(loss_attacker)(params, value_params, observations, actions, returns, mask)
         updates, opt_state = optimizer["attacker"].update(
             grads, params=params, state=opt_state
         )
         return optax.apply_updates(params, updates), opt_state, grads
+
+    @jax.jit
+    def value_loss(params_value, observations, returns, padding_mask):
+        predicted_values = value_net.apply(params_value, observations).squeeze(-1)
+        #predicted_values
+        # Calculate MSE loss
+        loss = jnp.mean(padding_mask * (predicted_values - returns) ** 2)
+        return loss
+
+    @jax.jit
+    def update_value_network(params_value, opt_state_value, observations, returns, padding_mask):
+        grads_value = jax.grad(value_loss)(params_value, observations, returns, padding_mask)
+        updates_value, opt_state_value = value_optimizer.update(grads_value, opt_state_value)
+        new_params_value = optax.apply_updates(params_value, updates_value)
+        return new_params_value, opt_state_value
 
     def parallel_rollouts(
         env,
@@ -238,15 +269,33 @@ def parallel_nash_reinforce(
                 jax.nn.relu,
                 hk.Linear(64),
                 jax.nn.relu,
+                 hk.Linear(64),
+                jax.nn.relu,
+                hk.Linear(64),
+                jax.nn.relu,
                 hk.Linear(env.num_actions),
                 jax.nn.softmax,
             ]
         )
         return net(observation)
 
+
+    def value_network(observation):
+        net = hk.Sequential(
+            [
+                hk.Linear(64),
+                jax.nn.relu,
+                hk.Linear(64),
+                jax.nn.relu,
+                hk.Linear(1),
+            ]
+        )
+        return net(observation)
+    
     ############################
     # Initialize Haiku policy network
     policy_net = hk.without_apply_rng(hk.transform(policy_network))
+    value_net = hk.without_apply_rng(hk.transform(value_network))
     initial_state = env.reset()
     initial_state_nn = env.encode_helper(initial_state)
 
@@ -255,6 +304,7 @@ def parallel_nash_reinforce(
             player: policy_net.init(jax.random.PRNGKey(42), initial_state_nn)
             for player in env.players
         }
+        value_params = value_net.init(jax.random.PRNGKey(42), initial_state_nn)
     else:
         params = loaded_params
         print("loaded params")
@@ -267,6 +317,11 @@ def parallel_nash_reinforce(
     opt_state = {
         player: optimizer[player].init(params[player]) for player in env.players
     }
+    value_optimizer = agent_optimizer
+    value_opt_state = value_optimizer.init(value_net.init(jax.random.PRNGKey(42), initial_state_nn))
+
+    
+
     episode_losses = []  # Add this line to store the losses
     all_wins, all_traj_lengths = [], []
     batch_states = {player: [] for player in env.players}
@@ -344,10 +399,11 @@ def parallel_nash_reinforce(
                     True,
                     False,
                     None,
+                    None
                 ]
             )
             env.make_gif(f"gifs/experiment_nash/{timestamp}_{episode}.gif")
-            save_params(episode, params, "nash", timestamp)
+            save_params(episode, params, value_params, "nash", timestamp)
 
             # bellman_error = calc_bellman_error(env, params, policy_net, num_eval_episodes, jax.random.PRNGKey(episode), epsilon, gamma)
             # print('bellman_error', bellman_error)
@@ -360,6 +416,7 @@ def parallel_nash_reinforce(
                 if player == "defender":
                     params[player], opt_state[player], defender_grads = update_defender(
                         params[player],
+                        value_params,
                         opt_state[player],
                         np.array(batch_states[player]),
                         np.array(batch_actions[player]),
@@ -369,12 +426,25 @@ def parallel_nash_reinforce(
                 elif player == "attacker":
                     params[player], opt_state[player], attacker_grads = update_attacker(
                         params[player],
+                        value_params,
                         opt_state[player],
                         np.array(batch_states[player]),
                         np.array(batch_actions[player]),
                         np.array(batch_returns[player]),
                         np.array(batch_masks[player]),
                     )
+
+            value_params, value_opt_state, = update_value_network(
+                value_params, value_opt_state, 
+                np.array(batch_states['attacker']), 
+                np.array(batch_returns['attacker']), 
+                np.array(batch_masks['attacker'])
+            )
+
+            value_norm = optax.global_norm(value_params)
+            current_value_loss = value_loss(value_params, np.array(batch_states['attacker']), np.array(batch_returns['attacker']), np.array(batch_masks['attacker']))
+            print('current_value_loss', current_value_loss)
+            writer.add_scalar('value_loss', np.array(current_value_loss), episode)
 
             defender_norm = optax.global_norm(params["defender"])
             attacker_norm = optax.global_norm(params["attacker"])
@@ -717,6 +787,7 @@ def parallel_stackelberg_reinforce(
     # Define the optimizer
     agent_optimizer = optax.chain(
         optax.radam(learning_rate=learning_rate, b1=.9, b2=.9),
+        #optax.optimistic_gradient_descent(learning_rate=learning_rate),
     )
     optimizer = {player: agent_optimizer for player in env.players}
     opt_state = {
@@ -833,16 +904,16 @@ def parallel_stackelberg_reinforce(
         #     training_player = 'attacker'
 
         #this is the original
-        # if episode % 4 == 0:
-        #     training_player = 'defender'
-        # else:
-        #     training_player = 'attacker'
+        if episode % 4 == 0:
+            training_player = 'defender'
+        else:
+            training_player = 'attacker'
 
         #alternate players every 4th episode
-        if episode % 4 == 0:
-            training_player = env.players[
-                 (env.players.index(training_player) + 1) % len(env.players)
-            ]  # switch trining player
+        # if episode % 4 == 0:
+        #     training_player = env.players[
+        #          (env.players.index(training_player) + 1) % len(env.players)
+        #     ]  # switch trining player
 
 
 
@@ -950,7 +1021,7 @@ if __name__ == "__main__":
     config = load_config("configs/config.yml")
     print_config(config)
     
-    game_type = 'stackelberg'
+    game_type = config['game']['type']
     timestamp = str(datetime.datetime.now())
 
     env = TwoPlayerDubinsCarEnv(
@@ -991,7 +1062,7 @@ if __name__ == "__main__":
 
     # Logging
     print(game_type, " starting experiment at :", timestamp)
-    writer = SummaryWriter(f"runs_6_baseline/experiment_{game_type}" + timestamp+"_drawless")
+    writer = SummaryWriter(f"runs_8_baseline/experiment_{game_type}" + timestamp+"_drawless")
     #Load data (deserialize)
     # with open('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-09-15 10:22:44.481035_episode_12224_params.pickle', 'rb') as handle:
     #     loaded_params = pickle.load(handle)

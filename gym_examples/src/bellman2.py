@@ -22,6 +22,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import optax
 from envs.two_player_dubins_car import TwoPlayerDubinsCarEnv
+from envs.two_player_dubins_car_pe import TwoPlayerDubinsCarPEEnv
 from matplotlib import cm
 from PIL import Image
 from torch.utils.tensorboard import SummaryWriter
@@ -83,7 +84,7 @@ def parallel_rollouts(
     reward=None,
     state=None,
 ):
-    keys = jax.random.split(key, num_rollouts*2)
+    keys = jax.random.split(key, num_rollouts)
     args = [
         (env.game_type, params, policy_net, k, epsilon, gamma, render, for_q_value, reward, state)
         for k in keys
@@ -301,20 +302,72 @@ def parallel_nash_reinforce(
         with open(file, 'rb') as handle:
             loaded_params = pickle.load(handle)
             episode = int(file.split('_episode_')[1].split('_params')[0])
-            key = jax.random.PRNGKey((episode+1)*seed)
+            #arg_min_max_q, mixed_q, v = calc_bellman_error(env, loaded_params, policy_net, num_eval_episodes, jax.random.PRNGKey(episode), epsilon_start, gamma)
+
+            key = jax.random.PRNGKey(episode*seed)
+            state = env.reset(key)
+            #print('v-state', state)
+
+            #subkey = jax.random.PRNGKey(episode+10)
+            args = (env.game_type, loaded_params, policy_net, key, epsilon_start, gamma, False, False, 0, state)
+
+                
+            states, actions, action_masks, returns, padding_mask, wins = env.single_rollout(args)
+            #env.make_gif(f"gifs/adhoc/{timestamp}_{episode}_10.gif")
+
+
+            print('Values Rollout')
+            print('actions', actions)
+            # print('returns', returns)
+            #  print('v-state defender', states['defender'])
+
+            reward_v = returns['attacker'][0]
+            print('reward_v', reward_v)
+            
+
+            print('Q Values Rollout')
+            state = env.reset(key)
+            #print('q-state1', env.encode_helper(state))
+            state, reward, _, _ = env.step(
+                state, 0, "defender", update_env=False
+            )
+            #print('q-state2',env.encode_helper(state))
+            state, reward, _, _ = env.step(
+                state, 2, "attacker", update_env=False
+            )
+            #print('q-state3',env.encode_helper(state))
+
+
+            args = (env.game_type, loaded_params, policy_net, key, epsilon_start, gamma, False, True, reward, state)
+            states, actions, action_masks, returns, padding_mask, wins = env.single_rollout(args)
+            reward_q = returns['attacker'][0]
+            #print('q-state defender', states['defender'])
+            print('reward_q', reward_q)
+
+            #print('actions', actions['attacker'])
+            # print('returns', returns)
+
+            print('Bellman Error')
+            print(reward_v - reward_q)
+
+
             arg_min_max_q, mixed_q, v = calc_bellman_error(env, loaded_params, policy_net, num_eval_episodes, key, epsilon_start, gamma)
             arg_q_norm = np.linalg.norm(arg_min_max_q)
             mixed_q_norm = np.linalg.norm(mixed_q)
             v_norm = np.linalg.norm(v)
             arg_bellman_error = np.linalg.norm(arg_min_max_q-v)
             mixed_bellman_error = np.linalg.norm(mixed_q-v)
+            mixed_bellman_mean = np.mean(np.abs(mixed_q - v))
+            arg_bellman_mean = np.mean(np.abs(arg_min_max_q - v))
+            
+
             print('argq:', arg_min_max_q)
             print('mixedq:', mixed_q)
             print('v:', v)
+            print('diff', mixed_q - v)
             print('bellman_error:', mixed_bellman_error)
-            # writer.add_scalar('q_norm', q_norm, episode)
-            # writer.add_scalar('v_norm', v_norm, episode)
-            # writer.add_scalar('bellman_error', bellman_error, episode)
+            print('bellman_error mean:', mixed_bellman_mean)
+            print('arg_bellman_error:', arg_bellman_mean)
 
             writer.add_scalars(
                 "values",
@@ -324,33 +377,36 @@ def parallel_nash_reinforce(
                     "v_norm": v_norm,
                     "arg bellman": arg_bellman_error,
                     "mixed bellman": mixed_bellman_error,
+                    "mixed bellman mean": mixed_bellman_mean,
+                    "arg bellman mean": arg_bellman_mean,
                 },
-                episode,
-            )
-            be_list.append({'mixed': mixed_bellman_error, 'episode': episode, 'seed': seed})
-            # #_ = env.reset()
-            # (
-            #     states,
-            #     actions,
-            #     action_masks,
-            #     returns,
-            #     padding_mask,
-            #     wins,
-            # ) = env.single_rollout(
-            #     [
-            #         'stackelberg',
-            #         loaded_params,
-            #         policy_net,
-            #         jax.random.PRNGKey(42),
-            #         epsilon_start,
-            #         gamma,
-            #         True,
-            #         False,
-            #         None,
-            #     ]
-            # )
-            # env.make_gif(f"gifs/debug/{timestamp}_{episode}.gif")
+                episode,)
+            be_list.append({ 'episode': episode, 'seed': seed, 'mixed': mixed_bellman_error, 'arg': arg_bellman_error, 'mixed_mean': mixed_bellman_mean, 'arg_mean': arg_bellman_mean})
+            print('be_list', be_list)
+            # # #_ = env.reset()
+            # # (
+            # #     states,
+            # #     actions,
+            # #     action_masks,
+            # #     returns,
+            # #     padding_mask,
+            # #     wins,
+            # # ) = env.single_rollout(
+            # #     [
+            # #         'stackelberg',
+            # #         loaded_params,
+            # #         policy_net,
+            # #         jax.random.PRNGKey(42),
+            # #         epsilon_start,
+            # #         gamma,
+            # #         True,
+            # #         False,
+            # #         None,
+            # #     ]
+            # # )
+            # # env.make_gif(f"gifs/debug/{timestamp}_{episode}.gif")
     return be_list
+
         
 
 
@@ -418,12 +474,17 @@ def parallel_stackelberg_reinforce(
             episode = int(file.split('_episode_')[1].split('_params')[0])
             #arg_min_max_q, mixed_q, v = calc_bellman_error(env, loaded_params, policy_net, num_eval_episodes, jax.random.PRNGKey(episode), epsilon_start, gamma)
 
-            key = jax.random.PRNGKey(episode)
+            key = jax.random.PRNGKey(episode*seed)
             state = env.reset(key)
             #print('v-state', state)
+
+            #subkey = jax.random.PRNGKey(episode+10)
             args = (env.game_type, loaded_params, policy_net, key, epsilon_start, gamma, False, False, 0, state)
+
                 
             states, actions, action_masks, returns, padding_mask, wins = env.single_rollout(args)
+            #env.make_gif(f"gifs/adhoc/{timestamp}_{episode}_10.gif")
+
 
             print('Values Rollout')
             print('actions', actions)
@@ -431,17 +492,18 @@ def parallel_stackelberg_reinforce(
           #  print('v-state defender', states['defender'])
 
             reward_v = returns['attacker'][0]
+            print('reward_v', reward_v)
             
 
             print('Q Values Rollout')
             state = env.reset(key)
             #print('q-state1', env.encode_helper(state))
             state, reward, _, _ = env.step(
-                state, 1, "defender", update_env=False
+                state, 0, "defender", update_env=False
             )
             #print('q-state2',env.encode_helper(state))
             state, reward, _, _ = env.step(
-                state, 1, "attacker", update_env=False
+                state, 2, "attacker", update_env=False
             )
             #print('q-state3',env.encode_helper(state))
 
@@ -450,6 +512,7 @@ def parallel_stackelberg_reinforce(
             states, actions, action_masks, returns, padding_mask, wins = env.single_rollout(args)
             reward_q = returns['attacker'][0]
             #print('q-state defender', states['defender'])
+            print('reward_q', reward_q)
 
             #print('actions', actions['attacker'])
             # print('returns', returns)
@@ -457,7 +520,8 @@ def parallel_stackelberg_reinforce(
             print('Bellman Error')
             print(reward_v - reward_q)
 
-            arg_min_max_q, mixed_q, v = calc_bellman_error(env, loaded_params, policy_net, num_eval_episodes, jax.random.PRNGKey(episode), epsilon_start, gamma)
+
+            arg_min_max_q, mixed_q, v = calc_bellman_error(env, loaded_params, policy_net, num_eval_episodes, key, epsilon_start, gamma)
             arg_q_norm = np.linalg.norm(arg_min_max_q)
             mixed_q_norm = np.linalg.norm(mixed_q)
             v_norm = np.linalg.norm(v)
@@ -487,7 +551,8 @@ def parallel_stackelberg_reinforce(
                     "arg bellman mean": arg_bellman_mean,
                 },
                 episode,)
-            be_list.append({'mixed': mixed_bellman_error, 'episode': episode, 'seed': seed})
+            be_list.append({ 'episode': episode, 'seed': seed, 'mixed': mixed_bellman_error, 'arg': arg_bellman_error, 'mixed_mean': mixed_bellman_mean, 'arg_mean': arg_bellman_mean})
+            print('be_list', be_list)
             # # #_ = env.reset()
             # # (
             # #     states,
@@ -537,7 +602,7 @@ if __name__ == "__main__":
     config = load_config("configs/config.yml")
     print_config(config)
     
-    game_type = 'stackelberg'#config['game']['type']
+    game_type = 'nash'#config['game']['type']
     timestamp = str(datetime.datetime.now())
 
     env = TwoPlayerDubinsCarEnv(
@@ -578,7 +643,7 @@ if __name__ == "__main__":
 
     # Logging
     print(game_type, " starting experiment at :", timestamp)
-    writer = SummaryWriter(f"runs_6_baseline/experiment_{game_type}" + timestamp+"_bellman_error_camera")
+    writer = SummaryWriter(f"runs_8_baseline/experiment_{game_type}" + timestamp+"_bellman_error_baseline_multi")
 
     import glob
     import pickle
@@ -588,21 +653,28 @@ if __name__ == "__main__":
     files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-09-23 17:38:30.650545_episode_*_params.pickle') #camera stackelberg
     #files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_nash/2023-09-26 12:53:29.888866_episode_*_params.pickle') #camera nash
 
-    files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-12-31 07:43:56.196401_episode_*_params.pickle') #baseline pg
+    #files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2024-01-02 03:17:25.264038_episode_*_params.pickle') #best baseline so far
+    
+    files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2024-01-06 08:30:16.864426_episode_*_params.pickle') #best stackelberg baseline for final
+
+    files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_nash/2024-01-10 00:44:25.598902_episode_*_params.pickle') #best stackelberg baseline for final
+
+
+
     files = files[::2] #remove the value
     print(files)
 
     files.sort(key=lambda x: int(x.split('_episode_')[1].split('_params')[0]))
 
-    #files = files[:10] + files[10::10]
-    files = [files[0], files[-1]]
+    files = files[:30]
+    #files = [files[-1]]
     print(files)
     print('length', len(files))
 
     # Now params_list contains the parameters from all episodes
     # Training
 
-    seeds = [11]
+    seeds = [3,5,7,9,11]
     be_list = []
     for seed in seeds:
         print('seed', seed)
@@ -646,7 +718,7 @@ if __name__ == "__main__":
         be_list.append(be)
     
     # Save the be_list to a file
-    with open('bellman_data/be_list_stk_14.pickle', 'wb') as file:
+    with open('bellman_data/nash_baseline.pickle', 'wb') as file:
         pickle.dump(be_list, file)
         
     
