@@ -657,7 +657,9 @@ if __name__ == "__main__":
     
     files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2024-01-06 08:30:16.864426_episode_*_params.pickle') #best stackelberg baseline for final
 
-    files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_nash/2024-01-10 00:44:25.598902_episode_*_params.pickle') #best stackelberg baseline for final
+    files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_nash/2024-01-10 00:44:25.598902_episode_*_params.pickle') #best nash baseline for final
+    files = glob.glob('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_nash/2024-01-13 04:14:42.638173_episode_*_params.pickle') #new nash baseline for final
+
 
 
 
@@ -718,7 +720,7 @@ if __name__ == "__main__":
         be_list.append(be)
     
     # Save the be_list to a file
-    with open('bellman_data/nash_baseline.pickle', 'wb') as file:
+    with open('bellman_data/nash3.pickle', 'wb') as file:
         pickle.dump(be_list, file)
         
     

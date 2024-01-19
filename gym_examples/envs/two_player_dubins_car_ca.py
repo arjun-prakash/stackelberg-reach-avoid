@@ -12,7 +12,8 @@ import optax
 
 from envs.dubins_car import DubinsCarEnv
 
-class TwoPlayerDubinsCarEnv(DubinsCarEnv):
+class TwoPlayerDubinsCarEnvCA(DubinsCarEnv):
+    """ continuous action"""
     metadata = {'render.modes': ['human']}
 
     def __init__(self, game_type, num_actions, size, reward, max_steps, init_defender_position, init_attacker_position, capture_radius, goal_position, goal_radius, timestep, v_max, omega_max):
@@ -21,14 +22,18 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         self.game_type = game_type
         self.players = ['defender', 'attacker']
         self.num_actions = num_actions #3
-        self.action_space = {'attacker':spaces.Discrete(self.num_actions), 'defender':spaces.Discrete(self.num_actions)}
 
         self.size = 3#4
         self.reward = reward #1
         self.max_steps = max_steps# 50
 
-        self.observation_space= {'attacker':spaces.Box(low=np.array([-self.size, -self.size, 0]), high=np.array([self.size,self.size , 2*np.pi]), dtype=np.float32), 
-                                'defender':spaces.Box(low=np.array([-self.size, -self.size, 0]), high=np.array([self.size, self.size, 2*np.pi]), dtype=np.float32)}
+        self.action_space = {
+                    'attacker': spaces.Box(low=0, high=2*np.pi, shape=(1,), dtype=np.float32),
+                    'defender': spaces.Box(low=0, high=2*np.pi, shape=(1,), dtype=np.float32)
+                }
+
+        self.observation_space= {'attacker':spaces.Box(low=np.array([-self.size, -self.size]), high=np.array([self.size,self.size ]), dtype=np.float32), 
+                            'defender':spaces.Box(low=np.array([-self.size, -self.size]), high=np.array([self.size, self.size]), dtype=np.float32)}
 
 
 
@@ -99,8 +104,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         """
         Reset the environment and return the initial state
         """
-        down = 3 * np.pi / 2
-        up = np.pi / 2
+
 
         #if key not none start at initial positions
         if key is None:
@@ -115,16 +119,14 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             #random attacker x,y, theta
             attacker_x = jax.random.uniform(subkey1, minval=-self.size, maxval=self.size)
             attacker_y = jax.random.uniform(subkey1, minval=0, maxval=self.size)
-            attacker_theta = jax.random.uniform(subkey1, minval=down, maxval=down)
 
             #random defender x,y, theta
             defender_x = jax.random.uniform(subkey2, minval=0, maxval=0)
             defender_y = jax.random.uniform(subkey2, minval=-2, maxval=-2)
-            defender_theta = jax.random.uniform(subkey2, minval=up, maxval=up)
 
             #set the state
-            self.state['attacker'] = np.array([attacker_x, attacker_y, attacker_theta], dtype=self.observation_space['attacker'].dtype)
-            self.state['defender'] = np.array([defender_x, defender_y, defender_theta], dtype=self.observation_space['defender'].dtype)
+            self.state['attacker'] = np.array([attacker_x, attacker_y], dtype=self.observation_space['attacker'].dtype)
+            self.state['defender'] = np.array([defender_x, defender_y], dtype=self.observation_space['defender'].dtype)
 
             
             while np.linalg.norm(self.state['attacker'][:2] - self.state['defender'][:2]) <= self.capture_radius:
@@ -134,16 +136,14 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                 #random attacker x,y, theta
                 attacker_x = jax.random.uniform(subkey1, minval=-self.size, maxval=self.size)
                 attacker_y = jax.random.uniform(subkey1, minval=0, maxval=self.size)
-                attacker_theta = jax.random.uniform(subkey1, minval=down, maxval=down)
 
                 #random defender x,y, theta
                 defender_x = jax.random.uniform(subkey2, minval=0, maxval=0)
                 defender_y = jax.random.uniform(subkey2, minval=-2, maxval=-2)
-                defender_theta = jax.random.uniform(subkey2, minval=up, maxval=up)
 
                 #set the state
-                self.state['attacker'] = np.array([attacker_x, attacker_y, attacker_theta], dtype=self.observation_space['attacker'].dtype)
-                self.state['defender'] = np.array([defender_x, defender_y, defender_theta], dtype=self.observation_space['defender'].dtype)
+                self.state['attacker'] = np.array([attacker_x, attacker_y], dtype=self.observation_space['attacker'].dtype)
+                self.state['defender'] = np.array([defender_x, defender_y], dtype=self.observation_space['defender'].dtype)
 
 
                 # ensure that the attacker is at least 2 steps away from the goal
@@ -153,21 +153,20 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                     #random attacker x,y, theta
                     attacker_x = jax.random.uniform(subkey1, minval=-self.size, maxval=self.size)
                     attacker_y = jax.random.uniform(subkey1, minval=-self.size, maxval=self.size)
-                    attacker_theta = jax.random.uniform(subkey1, minval=down, maxval=down)
 
-                    self.state['attacker'] = np.array([attacker_x, attacker_y, attacker_theta], dtype=self.observation_space['attacker'].dtype)
+                    self.state['attacker'] = np.array([attacker_x, attacker_y], dtype=self.observation_space['attacker'].dtype)
 
 
 
         return self.state
 
     
-    def set(self, ax, ay, atheta, dx=0., dy=0., dtheta=0.):
+    def set(self, ax, ay, dx=0., dy=0.):
         """
         Reset the environment and return the initial state
         """
-        self.state['attacker'] = np.array([ax, ay, atheta], dtype=self.observation_space['attacker'].dtype)
-        self.state['defender'] = np.array([dx, dy, dtheta], dtype=self.observation_space['defender'].dtype)
+        self.state['attacker'] = np.array([ax, ay], dtype=self.observation_space['attacker'].dtype)
+        self.state['defender'] = np.array([dx, dy], dtype=self.observation_space['defender'].dtype)
 
         self.goal_position = self.goal_position
         return self.state
@@ -183,18 +182,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
           
         v = self.v_max # speed of the car
         
-        omega = self.omega_max # angular velocity of the car
-        if action == 0: # turn left
-            omega = -omega
-        elif action == 2: # turn right
-            omega = omega
-        
-        elif action == 1: # action 1 : straight
-            omega = 0
-        else:
-            #reverse
-            omega = -np.pi
-            v = self.v_max
+
 
         
 
@@ -205,14 +193,10 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             next_state = copy.deepcopy(state)  # save deep copy of the state
             
 
-        #update the state
+        #update the stat
 
-        next_state[player][2] += omega * self.timestep
-        next_state[player][2] = (next_state[player][2]) % (2 * np.pi) 
-
-
-        next_state[player][0] += v * np.cos(next_state[player][2]) * self.timestep
-        next_state[player][1] += v * np.sin(next_state[player][2]) * self.timestep
+        next_state[player][0] += v * np.cos(action) * self.timestep
+        next_state[player][1] += v * np.sin(action) * self.timestep
 
         dist_goal = np.linalg.norm(next_state['attacker'][:2] - self.goal_position)
         #reward = np.exp(-dist_goal)
@@ -224,7 +208,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
 
 
-        ## wrapping around
+        # wrapping around
         # if next_state[player][0] < self.observation_space[player].low[0]:
         #     next_state[player][0] = self.observation_space[player].high[0]
         # elif next_state[player][0] > self.observation_space[player].high[0]:
@@ -238,15 +222,13 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         out_of_bounds = False
 
-        # Check x-boundary
+        #Check x-boundary
         if next_state[player][0] <= self.observation_space[player].low[0] or next_state[player][0] >= self.observation_space[player].high[0]:
             out_of_bounds = True
-            next_state[player][2] = (np.pi + next_state[player][2]) % (2 * np.pi)
 
         # Check y-boundary
         if next_state[player][1] <= self.observation_space[player].low[1] or next_state[player][1] >= self.observation_space[player].high[1]:
             out_of_bounds = True
-            next_state[player][2] = (np.pi + next_state[player][2]) % (2 * np.pi)
 
         if out_of_bounds:
             reward = reward
@@ -285,7 +267,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                 info = {'player': player, 'is_legal':False, 'status':'attacker collided with defender'}
                 done = done_on_capture #should it be false?
                 next_state = state.copy()
-                reward = -200#reward #0
+                reward = reward #0
 
                 if update_env:
                     self.state = next_state
@@ -296,7 +278,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             if dist_capture < self.capture_radius:
                 info = {'player': player, 'is_legal':True, 'status':'defender collided with attacker'}
                 done = done_on_capture #True
-                reward = -200 #reward
+                reward = reward
                 #next_state = state.copy()
 
 
@@ -348,12 +330,12 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
     def state_for_env(self,nn_state):
         """convert the state from the neural network np.array representation to the environment representation dict"""
 
-        env_state = {'attacker':np.array([nn_state[0], nn_state[1], np.arctan2(nn_state[3], nn_state[2])]), 'defender':np.array([nn_state[4], nn_state[5], np.arctan2(nn_state[7], nn_state[6])])}
+        env_state = {'attacker':np.array([nn_state[0], nn_state[1]]), 'defender':np.array([nn_state[3], nn_state[4]])}
         return env_state
 
     def state_for_nn(self,env_state):
         """convert the state from the environment (dict) representation to the neural network representation np.array"""
-        nn_state = np.array([env_state['attacker'][0], env_state['attacker'][1], np.cos(env_state['attacker'][2]), np.sin(env_state['attacker'][2]), env_state['defender'][0], env_state['defender'][1], np.cos(env_state['defender'][2]), np.sin(env_state['defender'][2])])
+        nn_state = np.array([env_state['attacker'][0], env_state['attacker'][1], env_state['defender'][0], env_state['defender'][1]])
         return nn_state
     
 
@@ -421,9 +403,9 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         # self.positions['attacker'].append(np.array(self.state['attacker'][:2].copy()))
         # self.positions['defender'].append(np.array(self.state['defender'][:2].copy()))
 
-                # Append current positions and orientations to respective lists
-        self.positions['attacker'].append((self.state['attacker'][:2].copy(), self.state['attacker'][2]))
-        self.positions['defender'].append((self.state['defender'][:2].copy(), self.state['defender'][2]))
+        # Append current positions and orientations to respective lists
+        # self.positions['attacker'].append((self.state['attacker'][:2].copy())
+        # self.positions['defender'].append((self.state['defender'][:2].copy()))
 
 
 
@@ -434,12 +416,12 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         #         plt.plot(*pos, marker='o', markersize=2, color=color)
 
 # Plot trails for each player
-        for player, pos_orients in self.positions.items():
-            color = 'b' if player == 'attacker' else 'r'
-            for pos, orient in pos_orients:
-                dx = 0.1 * np.cos(orient)
-                dy = 0.1 * np.sin(orient)
-                plt.arrow(*pos, dx, dy, color=color, head_width=0.1, head_length=0.1)
+        # for player, pos_orients in self.positions.items():
+        #     color = 'b' if player == 'attacker' else 'r'
+        #     for pos, orient in pos_orients:
+        #         dx = 0.1 * np.cos(orient)
+        #         dy = 0.1 * np.sin(orient)
+        #         plt.arrow(*pos, dx, dy, color=color, head_width=0.1, head_length=0.1)
     
 
         attacker = plt.Circle((self.state['attacker'][0], self.state['attacker'][1]), 0.1, color='b', fill=True)
@@ -540,32 +522,16 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         attacker_x_norm = normalize_coordinate(attacker_state[0], min_value, max_value)
         attacker_y_norm = normalize_coordinate(attacker_state[1], min_value, max_value)
-        attacker_theta = attacker_state[2]
 
         defender_x_norm = normalize_coordinate(defender_state[0], min_value, max_value)
         defender_y_norm = normalize_coordinate(defender_state[1], min_value, max_value)
-        defender_theta = defender_state[2]
 
         goal_x_norm = normalize_coordinate(goal_position[0], min_value, max_value)
         goal_y_norm = normalize_coordinate(goal_position[1], min_value, max_value)
 
         distance_attacker_goal = np.linalg.norm(np.array([goal_x_norm, goal_y_norm]) - np.array([attacker_x_norm, attacker_y_norm]))
-        direction_attacker_goal = np.arctan2(goal_y_norm - attacker_y_norm, goal_x_norm - attacker_x_norm)
 
-        angle_diff_attacker_goal = direction_attacker_goal - attacker_theta
-        angle_diff_attacker_goal = (angle_diff_attacker_goal + np.pi) % (2 * np.pi) - np.pi
-        facing_goal_attacker = np.cos(angle_diff_attacker_goal)
 
-        #distance_attacker_defender = np.linalg.norm(np.array([defender_x_norm, defender_y_norm]) - np.array([attacker_x_norm, attacker_y_norm]))
-        direction_attacker_defender = np.arctan2(defender_y_norm - attacker_y_norm, defender_x_norm - attacker_x_norm)
-
-        angle_diff_attacker_defender = direction_attacker_defender - attacker_theta
-        angle_diff_attacker_defender = (angle_diff_attacker_defender + np.pi) % (2 * np.pi) - np.pi
-        facing_defender_attacker = np.cos(angle_diff_attacker_defender)
-
-        angle_diff_defender_attacker = direction_attacker_defender - defender_theta + np.pi
-        angle_diff_defender_attacker = (angle_diff_defender_attacker + np.pi) % (2 * np.pi) - np.pi
-        facing_attacker_defender = np.cos(angle_diff_defender_attacker)
 
         dx = np.abs(attacker_x_norm - defender_x_norm)
         dy = np.abs(attacker_y_norm - defender_y_norm)
@@ -580,17 +546,10 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         nn_state = np.array([attacker_x_norm, 
                              attacker_y_norm, 
-                             np.cos(attacker_theta), 
-                             np.sin(attacker_theta), 
                              defender_x_norm, 
                              defender_y_norm, 
-                             np.cos(defender_theta), 
-                             np.sin(defender_theta), 
                              distance_attacker_goal, 
-                             facing_goal_attacker, 
-                             distance_attacker_defender, 
-                             facing_defender_attacker,
-                             facing_attacker_defender
+                             distance_attacker_defender
                             ])
         
 
@@ -607,25 +566,20 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         attacker_x = unnormalize_coordinate(nn_state[0], min_value, max_value)
         attacker_y = unnormalize_coordinate(nn_state[1], min_value, max_value)
-        attacker_theta = np.arctan2(nn_state[3], nn_state[2]) % (2 * np.pi) 
 
         defender_x = unnormalize_coordinate(nn_state[4], min_value, max_value)
         defender_y = unnormalize_coordinate(nn_state[5], min_value, max_value)
-        defender_theta = np.arctan2(nn_state[7], nn_state[6]) % (2 * np.pi) 
 
         env_state = {
-            'attacker': np.array([attacker_x, attacker_y, attacker_theta]),
-            'defender': np.array([defender_x, defender_y, defender_theta])
+            'attacker': np.array([attacker_x, attacker_y]),
+            'defender': np.array([defender_x, defender_y])
         }
         return env_state
 
+ 
 
-    def unconstrained_select_action(self, nn_state, params, policy_net, key, epsilon):
-        if jax.random.uniform(key) < epsilon:
-            return jax.random.choice(key, self.num_actions)
-        else:
-            probs = policy_net.apply(params, nn_state)
-            return jax.random.choice(key, a=self.num_actions, p=probs)
+
+        return jax.random.choice(key, a=self.num_actions, p=probs)
     
     def get_legal_actions_mask(self, state, player):
         legal_actions_mask = []
@@ -664,20 +618,9 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         return jnp.argmax(probs)
 
 
-    def get_closer(self, state, player):
-        dists = []
-        for action in range(self.num_actions):
-            next_state, _, _, info = self.step(state, action,player, update_env=False)
-            #get distance between players
-            dist = np.linalg.norm(next_state['attacker'][:2] - next_state['defender'][:2])
-            dists.append(dist)
-        a = np.argmin(dists)
-        return a
 
 
-
-
-    
+ 
 
 
     def pad_and_mask(self, states, actions, action_masks, returns):
@@ -701,11 +644,23 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
 
 
+  # Usage in the environment
+    def get_action_from_policy_continuous(self,policy_output):
+        sin_angle, cos_angle = policy_output
+        angle = np.arctan2(sin_angle, cos_angle)
+        angle = (angle + 2 * np.pi) % (2 * np.pi)  # Ensure the angle is between 0 and 2*pi
+        return angle
 
+
+    def unconstrained_select_action(self, nn_state, params, policy_net, key, epsilon):
+        norm_action = policy_net.apply(params, nn_state)
+        action = self.get_action_from_policy_continuous(norm_action)
+        return action
+        
+    
 
         
     def single_rollout(self,args):
-        #print("env state" , self.state)
         game_type, params, policy_net, key, epsilon, gamma, render, for_q_value, one_step_reward, state = args
 
         if game_type != self.game_type:
@@ -755,10 +710,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
 
                 if game_type == 'nash':
-                    if player == 'attacker':
-                        action = self.unconstrained_select_action(nn_state, params[player], policy_net,  subkey, epsilon)
-                    else:
-                        action = self.get_closer(state, player)
+                    action = self.unconstrained_select_action(nn_state, params[player], policy_net,  subkey, epsilon)
                     state, reward, done, info = self.step(state=state, action=action, player=player, update_env=True)
                     nn_state = self.encode_helper(state)
                     actions[player].append(action)
@@ -770,10 +722,9 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                     legal_actions_mask = self.get_legal_actions_mask(state, player)
                     if sum(legal_actions_mask) != 0:
                         if player == 'defender':
-                            #action = self.constrained_select_action(nn_state, policy_net, params[player], legal_actions_mask, subkey, epsilon)
-                            action = self.get_closer(state, player)
+                            action = self.unconstrained_select_action(nn_state, params[player], policy_net, subkey, epsilon)
                         elif player == 'attacker':
-                            action = self.constrained_select_action(nn_state, policy_net, params[player], legal_actions_mask, subkey, epsilon)
+                            action = self.unconstrained_select_action(nn_state, params[player], policy_net, subkey, epsilon)
 
                             #action = self.constrained_deterministic_select_action(nn_state, policy_net, params[player], legal_actions_mask, subkey, epsilon)
                         #action = self.constrained_select_action(nn_state, policy_net, params[player], legal_actions_mask, subkey, epsilon)
@@ -820,8 +771,8 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                         #rewards['attacker'][-1] = -20
                         pass
                     if info['status'] == 'defender collided with attacker':
-                        defender_wins = True
-                        wins['defender'] = 1
+                        #defender_wins = True
+                        #wins['defender'] = 1
                         #rewards['attacker'][-1] = -1
                         pass
                     break
@@ -874,7 +825,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
 
             step += 1
-            #print(step)
+            print(step)
 
         if not defender_wins and not attacker_wins:
             wins['draw'] = 1
@@ -942,7 +893,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         nn_state = self.encode_helper(state)
 
         def_pos = []
-        y_vals = [1.5, 0,-1.5,-100]
+        y_vals = [1.5, 0,-1.5,-5]
         subkeys = jax.random.split(key,len(y_vals))
 
         for i in range(len(y_vals)):
@@ -1046,15 +997,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             wins['draw'] = 1
             #rewards['attacker'][-1] = -1
 
-        returns = {player: [] for player in self.players}
-
-        for player in self.players:
-            G = 0
-            for r in reversed(rewards['attacker']):
-                G = r + gamma * G
-                returns[player].append(G)
-            
-            returns[player] = list(reversed(returns[player]))
+        rewards['defender'] = rewards['attacker']
 
         # if not for_q_value:
         #     for player in self.players:
@@ -1062,7 +1005,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
     
         
 
-        return states, actions, action_masks, returns, padding_mask, wins
+        return states, actions, action_masks, rewards, padding_mask, wins
 
 
 
