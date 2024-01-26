@@ -53,12 +53,12 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         key, subkey1, subkey2 = jax.random.split(key, 3)
 
         # Example of setting random positions; adapt as necessary for your environment
-        defender_x = jax.random.uniform(subkey1, minval=-self.size, maxval=self.size)
-        defender_y = jax.random.uniform(subkey1, minval=-self.size, maxval=self.size)
+        defender_x = jax.random.uniform(subkey1, minval=0, maxval=0)
+        defender_y = jax.random.uniform(subkey1, minval=-2, maxval=-2)
         defender_theta = jax.random.uniform(subkey1, minval=0, maxval=2 * jnp.pi)
 
         attacker_x = jax.random.uniform(subkey2, minval=-self.size, maxval=self.size)
-        attacker_y = jax.random.uniform(subkey2, minval=-self.size, maxval=self.size)
+        attacker_y = jax.random.uniform(subkey2, minval=2, maxval=self.size)
         attacker_theta = jax.random.uniform(subkey2, minval=0, maxval=2 * jnp.pi)
 
         # Set initial state using provided positions or randomized ones
@@ -87,7 +87,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         omega = jnp.where(action == 0, -self.omega_max, 
               jnp.where(action == 2, self.omega_max, 0))
 
-        print('update',state)
+        #print('update',state)
         # Compute the new state
         new_theta = state[player][2] + omega * self.timestep
         new_x = state[player][0] + self.v_max * jnp.cos(new_theta) * self.timestep
@@ -101,13 +101,39 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         new_state = {**state, player: new_player_state}
         return new_state
 
+    # def _get_reward_done(self, state, player):
+    #     # Implement logic to calculate reward and done
+    #     # Example:
+    #     dist_goal = jnp.linalg.norm(state['attacker'][:2] - self.goal_position)
+    #     done_win = dist_goal < self.goal_radius
+    #     #reward = jnp.where(done_win, 200, -((dist_goal - self.goal_radius)**2))
+    #     reward =-(dist_goal - self.goal_radius)**2
+    #     #done_loss = jnp.linalg.norm(state['attacker'][:2] - state['defender'][:2]) < self.capture_radius
+    #     #reward = jnp.where(done_loss, -200, reward)
+    #     #done = jnp.logical_or(done_win, done_loss)
+
+    #     return reward, done_win
+
+
     def _get_reward_done(self, state, player):
-        # Implement logic to calculate reward and done
-        # Example:
+        # Calculate the distance of the attacker from the goal
         dist_goal = jnp.linalg.norm(state['attacker'][:2] - self.goal_position)
-        done = dist_goal < self.goal_radius
-        reward = jnp.where(done, 200, -((dist_goal - self.goal_radius)**2))
+
+        # Check if the attacker has reached the goal
+        done_win = dist_goal < self.goal_radius
+
+        # Check if the attacker is caught by the defender
+        done_loss = jnp.linalg.norm(state['attacker'][:2] - state['defender'][:2]) < self.capture_radius
+
+        # Assign rewards based on the conditions
+        reward = jnp.where(done_win, 200, -((dist_goal - self.goal_radius)**2))
+        reward = jnp.where(done_loss, -200, reward)
+
+        # Determine if the episode is done (either win or loss)
+        done = jnp.logical_or(done_win, done_loss)
+
         return reward, done
+
 
     def _reset_if_done(self, key, env_state, done):
         return jax.lax.cond(
@@ -160,7 +186,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             
 
 
-    def render(self, states, mode='human', close=False):
+    def render(self, states, dones, mode='human', close=False):
         """
         Render the environment for human viewing
         """
@@ -174,10 +200,21 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         fig = plt.figure()
         plt.clf()
-        plt.xlim([-self.size, self.size])
-        plt.ylim([-self.size, self.size])
 
+        #xlim max of size or position
+        
+        i = 0
         for state in states:
+
+            if dones[i] == True:
+                break
+            i+=1
+
+            xlim = max(self.size, max([abs(state['attacker'][0]) for state in states]), max([abs(state['defender'][0]) for state in states]))
+            ylim = max(self.size, max([abs(state['attacker'][1]) for state in states]), max([abs(state['defender'][1]) for state in states]))
+
+            plt.xlim([-xlim, xlim])
+            plt.ylim([-ylim, ylim])
 
             self.positions['attacker'].append((state['attacker'][:2].copy(), state['attacker'][2]))
             self.positions['defender'].append((state['defender'][:2].copy(), state['defender'][2]))
@@ -787,6 +824,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
             step += 1
             #print(step)
+
 
         if not defender_wins and not attacker_wins:
             wins['draw'] = 1
