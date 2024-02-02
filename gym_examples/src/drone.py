@@ -9,40 +9,90 @@ import copy
 import jax
 import jax.numpy as jnp
 import haiku as hk
-import optax
+#import optax
 
 import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib import cm
 import numpy as np
 import pickle 
+import yaml
+import datetime
+
 
 from crazyflie_py import Crazyswarm
 
-def policy_network(observation):
-    net = hk.Sequential([
-        hk.Linear(100), jax.nn.relu,
-        hk.Linear(100), jax.nn.relu,
-        hk.Linear(100), jax.nn.relu,
-        hk.Linear(100), jax.nn.relu,
 
-        hk.Linear(env.num_actions),
-        jax.nn.softmax
-    ])
-    return net(observation)
+def load_config(file_path):
+    with open(file_path, 'r') as stream:
+        try:
+            return yaml.safe_load(stream)
+        except yaml.YAMLError as exc:
+            print(exc)
+
+def print_config(config):
+    print("Starting experiment with the following configuration:\n")
+    print(yaml.dump(config))
+
+
+def policy_network(observation, legal_moves):
+        net = hk.Sequential(
+            [
+                hk.Linear(64),
+                jax.nn.relu,
+                hk.Linear(64),
+                jax.nn.relu,
+                hk.Linear(64),
+                jax.nn.relu,
+                hk.Linear(64),
+                jax.nn.relu,
+                hk.Linear(env.num_actions),
+                jax.nn.softmax,
+            ]
+        )
+        # legal_moves = legal_moves[..., None]
+
+        logits = net(observation)
+
+        #masked_logits = jnp.where(legal_moves, logits, -1e8)
+        masked_logits = jnp.where(legal_moves, logits, 1e-8)
 
 policy_net = hk.without_apply_rng(hk.transform(policy_network))
 key = jax.random.PRNGKey(1)
 epsilon = 0.1
 
 #Load data (deserialize)
-with open('data/drone/nash_2023-08-07 12_01_43.203205_episode_49664_params.pickle', 'rb') as handle:
+with open('data/drone/stackelberg_camera.pickle', 'rb') as handle:
      loaded_params = pickle.load(handle)
 
-env = TwoPlayerDubinsCarEnv()
-env.reset()
-state = env.state
 
+config = load_config("configs/config.yml")
+print_config(config)
+
+game_type = config['game']['type']
+timestamp = str(datetime.datetime.now())
+
+env = TwoPlayerDubinsCarEnv(
+    game_type=game_type,
+    num_actions=config['env']['num_actions'],
+    size=config['env']['board_size'],
+    reward=config['env']['reward'],
+    max_steps=config['env']['max_steps'],
+    init_defender_position=config['env']['init_defender_position'],
+    init_attacker_position=config['env']['init_attacker_position'],
+    capture_radius=config['env']['capture_radius'],
+    goal_position=config['env']['goal_position'],
+    goal_radius=config['env']['goal_radius'],
+    timestep=config['env']['timestep'],
+    v_max=config['env']['velocity'],
+    omega_max=config['env']['turning_angle'],
+)
+
+key = jax.random.PRNGKey(1)
+
+env.reset(key)
+state = env.state
+real = True
 
 #
 
@@ -53,8 +103,10 @@ def main():
     timeHelper = swarm.timeHelper
     defender_cf = swarm.allcfs.crazyflies[0]
     attacker_cf = swarm.allcfs.crazyflies[1]
-    attacker_cf.setLEDColor(0, 0, 0)
-    defender_cf.setLEDColor(0, 0, 0)
+
+    if real:
+        attacker_cf.setLEDColor(0, 0, 0)
+        defender_cf.setLEDColor(0, 0, 0)
     defender_cf.takeoff(1.0, 2.5)
     attacker_cf.takeoff(1.0, 2.5)
 
@@ -66,17 +118,19 @@ def main():
     defender_cf.goTo(initial_position_d, 0, 3.5)
     attacker_cf.goTo(initial_position_a, 0, 3.5)
     timeHelper.sleep(5.)
-    attacker_cf.setLEDColor(255, 0, 0)
-    defender_cf.setLEDColor(0, 255, 0)
-    
+    if real:
+        attacker_cf.setLEDColor(255, 0, 0)
+        defender_cf.setLEDColor(0, 0, 255)
+        
     timesteps = np.arange(0, 30, 0.1)
     for t in timesteps:
         if t % 0.5 == 0:
             prev_state = copy.deepcopy(state) 
             for player in env.players:
                 key, subkey = jax.random.split(key)
+                legal_actions_mask = env.get_legal_actions_mask(state, player)
                 nn_state = env.encode_helper(state)
-                action = env.unconstrained_select_action(nn_state, loaded_params[player], policy_net,  key, epsilon)
+                action = env.constrained_select_action(nn_state, policy_net, loaded_params[player], legal_actions_mask, subkey, 0.0001)
                 state, reward, done, info = env.step(state=state, action=action, player=player, update_env=True)
                 env.render()
                 print('prev_state', prev_state)
@@ -84,14 +138,15 @@ def main():
                 print('action:', action)
 
         if done: 
-            if info['status'] == 'goal_reached':
-                attacker_cf.setLEDColor(255, 0, 255)
-                defender_cf.setLEDColor(255, 0, 255)
-            elif info['status'] == 'eaten':
-                attacker_cf.setLEDColor(0, 255, 255)
-                defender_cf.setLEDColor(0, 255, 255)
+            if real:
+                if info['status'] == 'goal_reached':
+                    attacker_cf.setLEDColor(255, 255, 0)
+                    defender_cf.setLEDColor(255, 255, 0)
+                elif info['status'] == 'eaten':
+                    attacker_cf.setLEDColor(0, 255, 255)
+                    defender_cf.setLEDColor(0, 255, 255)
             break
-
+            
 
         attacker_prev_state = prev_state['attacker']
         defender_prev_state = prev_state['defender']
@@ -112,16 +167,15 @@ def main():
         # wait for 0.1 seconds
     defender_cf.notifySetpointsStop()
     attacker_cf.notifySetpointsStop()
-    # attacker_cf.setLEDColor(0, 0, 0)
-    # defender_cf.setLEDColor(0, 0, 0)
+    if real:
+        attacker_cf.setLEDColor(0, 0, 0)
+        defender_cf.setLEDColor(0, 0, 0)
     pos = np.array(defender_cf.initialPosition) + np.array([0., 0., 1.0])
-    defender_cf.goTo(pos, 0, 5.0)
+    defender_cf.land(0.04, 2.5)
     pos = np.array(attacker_cf.initialPosition) + np.array([0., 0., 1.0])
-    attacker_cf.goTo(pos, 0, 5.0)
+    attacker_cf.land(0.04,2.5)
     timeHelper.sleep(6.0)
 
-    defender_cf.land(0.04, 2.5)
-    attacker_cf.land(0.04,2.5)
 
     timeHelper.sleep(5.0)
 
@@ -131,7 +185,7 @@ def main():
 if __name__ == '__main__':
     main()
     #ros2 launch crazyflie launch.py backend:=sim
-    #adjust crazyf;ies.yaml
+    #adjust crazyfies.yaml
 
 
 

@@ -15,48 +15,67 @@ from envs.dubins_car import DubinsCarEnv
 class TwoPlayerDubinsCarEnv(DubinsCarEnv):
     metadata = {'render.modes': ['human']}
 
-    def __init__(self):
+    def __init__(self, game_type, num_actions, size, reward, max_steps, init_defender_position, init_attacker_position, capture_radius, goal_position, goal_radius, timestep, v_max, omega_max):
         super().__init__()
 
-
+        self.game_type = game_type
         self.players = ['defender', 'attacker']
-        self.num_actions = 3
+        self.num_actions = num_actions #3
         self.action_space = {'attacker':spaces.Discrete(self.num_actions), 'defender':spaces.Discrete(self.num_actions)}
 
-        self.size = 4
-        self.reward = 1
-        self.max_steps = 50
+        self.size = 3#4
+        self.reward = reward #1
+        self.max_steps = max_steps# 50
 
         self.observation_space= {'attacker':spaces.Box(low=np.array([-self.size, -self.size, 0]), high=np.array([self.size,self.size , 2*np.pi]), dtype=np.float32), 
                                 'defender':spaces.Box(low=np.array([-self.size, -self.size, 0]), high=np.array([self.size, self.size, 2*np.pi]), dtype=np.float32)}
 
 
 
-        self.state = {'attacker': np.array([0,0,0]), 'defender':np.array([0,0,np.pi])}
+        self.init_defender_position = init_defender_position #np.array([0,0,0])
+        self.init_attacker_position = init_attacker_position #np.array([2,2,0])
+        self.state = {'attacker': np.array([self.init_attacker_position]), 'defender':np.array(self.init_defender_position)}
+        self.capture_radius = capture_radius #0.5 # radius of the obstacle
 
-        self.goal_position = np.array([0,0]) # position of the goal
-        self.capture_radius = 0.5 # radius of the obstacle
+        self.goal_position = np.array(goal_position) # position of the goal
+        self.goal_radius = goal_radius # minimum distance to goal to consider the task as done
 
-
-
-        self.min_distance_to_goal = 1 # minimum distance to goal to consider the task as done
-        self.min_distance_to_obstacle = 0.1 # minimum distance to obstacle to consider the task as done
-
-        self.timestep = 1 # timestep in seconds
-        self.v_max = 0.25 # maximum speed
-        self.omega_max = 65 * np.pi/180  # maximum angular velocity (radians)
+        self.timestep = timestep # timestep in seconds
+        self.v_max = v_max # maximum speed
+        self.omega_max = omega_max * np.pi/180  # maximum angular velocity (radians)
         self.images = []
         self.positions = {'attacker': [], 'defender': []}
         
 
-    def reset(self):
+    def reset_camera(self, key=None):
         """
         Reset the environment and return the initial state
         """
-        
-        self.state['defender'] = np.array([0, 0., 0.], dtype=self.observation_space['defender'].dtype)
+        if key is not None: #move attacker lefit or right
+            key_attacker, key_defender = jax.random.split(key)
 
-        self.state['attacker'] = np.array([2., 2., 0.], dtype=self.observation_space['defender'].dtype)
+            attacker_position = self.init_attacker_position
+            #perturbation = jax.random.choice(key, a=np.array([3,2,1]))
+
+            attacker_perturbation_x = jax.random.uniform(key_attacker, minval=-1, maxval=1)
+            attacker_position[0] = attacker_perturbation_x
+            attacker_perturbation_y = jax.random.uniform(key_attacker, minval=1, maxval=3)
+            attacker_position[1] = attacker_perturbation_y
+
+            defender_position = self.init_defender_position
+            defender_perturbation_x = jax.random.uniform(key_defender, minval=-0.5, maxval=0.5)
+            defender_position[0] = defender_perturbation_x
+            defender_perturbation_y = jax.random.uniform(key_defender, minval=-1.5, maxval=-0.5)
+            defender_position[1] = defender_perturbation_y
+
+
+
+
+            self.state['attacker'] = np.array(attacker_position, dtype=self.observation_space['attacker'].dtype)
+            self.state['defender'] = np.array(defender_position, dtype=self.observation_space['defender'].dtype)
+        else:
+            self.state['attacker'] = np.array(self.init_attacker_position, dtype=self.observation_space['attacker'].dtype)
+            self.state['defender'] = np.array(self.init_defender_position, dtype=self.observation_space['defender'].dtype)
 
         illegal = True
         epsilon = 0.25
@@ -66,7 +85,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             #self.state['defender'] = self.observation_space['defender'].sample()
 
             dist_capture = np.linalg.norm(self.state['attacker'][:2] - self.state['defender'][:2]) - self.capture_radius - 1
-            dist_goal = np.linalg.norm(self.state['attacker'][:2] - self.goal_position) - self.min_distance_to_goal - 1
+            dist_goal = np.linalg.norm(self.state['attacker'][:2] - self.goal_position) - self.goal_radius - 1
 
             if dist_capture > 0 and dist_goal > 0:
                 illegal = False
@@ -74,8 +93,74 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         return self.state
 
 
-        self.goal_position = self.goal_position
+    
+    def reset(self, key=None):
+
+        """
+        Reset the environment and return the initial state
+        """
+        down = 3 * np.pi / 2
+        up = np.pi / 2
+
+        #if key not none start at initial positions
+        if key is None:
+            self.state['attacker'] = np.array(self.init_attacker_position, dtype=self.observation_space['attacker'].dtype)
+            self.state['defender'] = np.array(self.init_defender_position, dtype=self.observation_space['defender'].dtype)
+
+        else:
+            # Split the key for attacker and defender
+            key, subkey1, subkey2 = jax.random.split(key, 3)
+
+
+            #random attacker x,y, theta
+            attacker_x = jax.random.uniform(subkey1, minval=-self.size, maxval=self.size)
+            attacker_y = jax.random.uniform(subkey1, minval=0, maxval=self.size)
+            attacker_theta = jax.random.uniform(subkey1, minval=down, maxval=down)
+
+            #random defender x,y, theta
+            defender_x = jax.random.uniform(subkey2, minval=0, maxval=0)
+            defender_y = jax.random.uniform(subkey2, minval=-2, maxval=-2)
+            defender_theta = jax.random.uniform(subkey2, minval=up, maxval=up)
+
+            #set the state
+            self.state['attacker'] = np.array([attacker_x, attacker_y, attacker_theta], dtype=self.observation_space['attacker'].dtype)
+            self.state['defender'] = np.array([defender_x, defender_y, defender_theta], dtype=self.observation_space['defender'].dtype)
+
+            
+            while np.linalg.norm(self.state['attacker'][:2] - self.state['defender'][:2]) <= self.capture_radius:
+                # generate new subkeys for attacker and defender
+                key, subkey1, subkey2 = jax.random.split(subkey1, 3)
+
+                #random attacker x,y, theta
+                attacker_x = jax.random.uniform(subkey1, minval=-self.size, maxval=self.size)
+                attacker_y = jax.random.uniform(subkey1, minval=0, maxval=self.size)
+                attacker_theta = jax.random.uniform(subkey1, minval=down, maxval=down)
+
+                #random defender x,y, theta
+                defender_x = jax.random.uniform(subkey2, minval=0, maxval=0)
+                defender_y = jax.random.uniform(subkey2, minval=-2, maxval=-2)
+                defender_theta = jax.random.uniform(subkey2, minval=up, maxval=up)
+
+                #set the state
+                self.state['attacker'] = np.array([attacker_x, attacker_y, attacker_theta], dtype=self.observation_space['attacker'].dtype)
+                self.state['defender'] = np.array([defender_x, defender_y, defender_theta], dtype=self.observation_space['defender'].dtype)
+
+
+                # ensure that the attacker is at least 2 steps away from the goal
+                while np.linalg.norm(self.state['attacker'][:2] - self.goal_position) <= self.goal_radius + 3:
+                    key, subkey1, subkey2 = jax.random.split(subkey1, 3)
+
+                    #random attacker x,y, theta
+                    attacker_x = jax.random.uniform(subkey1, minval=-self.size, maxval=self.size)
+                    attacker_y = jax.random.uniform(subkey1, minval=-self.size, maxval=self.size)
+                    attacker_theta = jax.random.uniform(subkey1, minval=down, maxval=down)
+
+                    self.state['attacker'] = np.array([attacker_x, attacker_y, attacker_theta], dtype=self.observation_space['attacker'].dtype)
+
+
+
         return self.state
+
     
     def set(self, ax, ay, atheta, dx=0., dy=0., dtheta=0.):
         """
@@ -95,8 +180,9 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         """
 
 
-            
+          
         v = self.v_max # speed of the car
+        
         omega = self.omega_max # angular velocity of the car
         if action == 0: # turn left
             omega = -omega
@@ -108,6 +194,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         else:
             #reverse
             omega = -np.pi
+            v = self.v_max
 
         
 
@@ -128,12 +215,16 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         next_state[player][1] += v * np.sin(next_state[player][2]) * self.timestep
 
         dist_goal = np.linalg.norm(next_state['attacker'][:2] - self.goal_position)
+        #reward = np.exp(-dist_goal)
+        max_distance = np.sqrt(self.size**2 + self.size**2)
 
-        #self.reward = -dist_goal/4
+        #reward = 1/(dist_goal**2)
+        #reward = -((dist_goal - self.goal_radius)**2)/ max_distance**2
+        reward = -((dist_goal - self.goal_radius)**2)
 
 
 
-
+        ## wrapping around
         # if next_state[player][0] < self.observation_space[player].low[0]:
         #     next_state[player][0] = self.observation_space[player].high[0]
         # elif next_state[player][0] > self.observation_space[player].high[0]:
@@ -147,17 +238,29 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         out_of_bounds = False
 
+        # Check x-boundary
         if next_state[player][0] <= self.observation_space[player].low[0] or next_state[player][0] >= self.observation_space[player].high[0]:
             out_of_bounds = True
+            next_state[player][2] = (np.pi + next_state[player][2]) % (2 * np.pi)
 
+        # Check y-boundary
         if next_state[player][1] <= self.observation_space[player].low[1] or next_state[player][1] >= self.observation_space[player].high[1]:
             out_of_bounds = True
+            next_state[player][2] = (np.pi + next_state[player][2]) % (2 * np.pi)
 
         if out_of_bounds:
-            reward = -1
-            done = True
-            info = {'player': player, 'is_legal':False, 'status':'out_of_bounds'}
+            reward = reward
+            next_state[player][0] = state[player][0]
+            next_state[player][1] = state[player][1]
+            done = False
+            if player == 'attacker':
+                is_legal = True
+            else:
+                is_legal = True
 
+            info = {'player': player, 'is_legal':is_legal, 'status':'out_of_bounds'}
+            # print('oob')
+            # print(self.state)
             if update_env:
                 self.state = next_state
 
@@ -170,33 +273,40 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         dist_capture = np.linalg.norm(next_state['attacker'][:2] - next_state['defender'][:2]) 
 
         #self.reward = np.exp(-dist_goal) - np.exp(-dist_capture)
-        self.reward = np.exp(-dist_goal)
-
-
-      
         
-        if dist_capture < self.capture_radius:
 
-
-            if player == 'attacker':
-                info = {'player': player, 'is_legal':False, 'status':'cannot move into defender'}
-                done = True
+        if self.game_type == 'nash':
+            done_on_capture = True
+        else:
+            done_on_capture = False
+      
+        if player == 'attacker':
+            if dist_capture < self.capture_radius:
+                info = {'player': player, 'is_legal':False, 'status':'attacker collided with defender'}
+                done = done_on_capture #should it be false?
                 next_state = state.copy()
-                reward = -1
+                reward = -200#reward #0
 
-            else: #defender eats attacker
-                info = {'player': player, 'is_legal':True, 'status':'eaten'}
-                done = True
-                reward = -1 # -self.reward
+                if update_env:
+                    self.state = next_state
+
+                return next_state, reward, done, info
+
+        elif player == 'defender':
+            if dist_capture < self.capture_radius:
+                info = {'player': player, 'is_legal':True, 'status':'defender collided with attacker'}
+                done = done_on_capture #True
+                reward = -200 #reward
+                #next_state = state.copy()
 
 
-            if update_env:
-                self.state = next_state
+                if update_env:
+                    self.state = next_state
 
-            return next_state, reward, done, info
+                return next_state, reward, done, info
        
-        if dist_goal < self.min_distance_to_goal:
-            reward = 1
+        if dist_goal < self.goal_radius:
+            reward = 200
             done = True
             info = {'player': player, 'is_legal':True, 'status':'goal_reached'}
 
@@ -206,7 +316,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             return next_state, reward, done, info
         
         else:
-            reward = 0 #self.reward
+            reward = reward
             done = False
             info = {'player': player, 'is_legal':True, 'status':'in_progress'}
             if update_env:
@@ -334,15 +444,18 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         attacker = plt.Circle((self.state['attacker'][0], self.state['attacker'][1]), 0.1, color='b', fill=True)
         defender = plt.Circle((self.state['defender'][0], self.state['defender'][1]), self.capture_radius, color='r', fill=True)
+        defender_capture_radius = plt.Circle((self.state['defender'][0], self.state['defender'][1]), self.capture_radius+self.v_max, color='r', fill=False, linestyle='--')
+
 
 
         # draw goal
-        goal = plt.Circle((self.goal_position[0], self.goal_position[1]), self.min_distance_to_goal, color='g', fill=False)
+        goal = plt.Circle((self.goal_position[0], self.goal_position[1]), self.goal_radius, color='g', fill=False)
 
         # draw obstacle
         plt.gca().add_artist(attacker)
         plt.gca().add_artist(defender)
         plt.gca().add_artist(goal)
+        plt.gca().add_artist(defender_capture_radius)
 
         
 
@@ -358,8 +471,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         import imageio
 
         end_state = self.images[-1]
-        ms = 1000/30
-        imageio.mimsave(file_name, self.images, ms=ms)
+        imageio.mimsave(file_name, self.images, fps=30)
         self.images = []
         self.positions = {'attacker': [], 'defender': []}
 
@@ -513,7 +625,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             return jax.random.choice(key, self.num_actions)
         else:
             probs = policy_net.apply(params, nn_state)
-            return jax.random.categorical(key, probs)
+            return jax.random.choice(key, a=self.num_actions, p=probs)
     
     def get_legal_actions_mask(self, state, player):
         legal_actions_mask = []
@@ -523,15 +635,44 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         return jnp.array(legal_actions_mask)
 
     def constrained_select_action(self, nn_state, policy_net, params, legal_actions_mask, key, epsilon):
+        #print('FUNC')
         if jax.random.uniform(key) < epsilon:
             legal_actions_indices = jnp.arange(len(legal_actions_mask))[legal_actions_mask.astype(bool)]
             return jax.random.choice(key, legal_actions_indices)
         else:
             probs = policy_net.apply(params, nn_state, legal_actions_mask)
-            action = jax.random.categorical(key, probs)
+            #action = jax.random.categorical(key, probs)
+            #print(nn_state)
+            #print('probs', probs)
+            action = jax.random.choice(key, a=self.num_actions, p=probs)
+            #print('probs', probs, 'action', action)
+            return action
+        
+    def constrained_deterministic_select_action(self, nn_state, policy_net, params, legal_actions_mask, key, epsilon):
+        if jax.random.uniform(key) < epsilon:
+            legal_actions_indices = jnp.arange(len(legal_actions_mask))[legal_actions_mask.astype(bool)]
+            return jax.random.choice(key, legal_actions_indices)
+        else:
+            probs = policy_net.apply(params, nn_state, legal_actions_mask)
+            action = jnp.argmax(probs)
             return action
 
 
+    def deterministic_select_action(self, nn_state, params, policy_net):
+        
+        probs = policy_net.apply(params, nn_state)
+        return jnp.argmax(probs)
+
+
+    def get_closer(self, state, player):
+        dists = []
+        for action in range(self.num_actions):
+            next_state, _, _, info = self.step(state, action,player, update_env=False)
+            #get distance between players
+            dist = np.linalg.norm(next_state['attacker'][:2] - next_state['defender'][:2])
+            dists.append(dist)
+        a = np.argmin(dists)
+        return a
 
 
 
@@ -564,7 +705,11 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         
     def single_rollout(self,args):
-        game_type, params, policy_net, key, epsilon, gamma, render, for_q_value = args
+        #print("env state" , self.state)
+        game_type, params, policy_net, key, epsilon, gamma, render, for_q_value, one_step_reward, state = args
+
+        if game_type != self.game_type:
+            raise ValueError(f"game_type {game_type} does not match self.game_type {self.game_type}")
 
 
         states = {player: [] for player in self.players}
@@ -579,16 +724,23 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         defender_wins = False
         attacker_wins = False
         defender_oob = False
-        info = {'winner': 'draw'}
+
+        defender_no_legal_moves = False
+        attacker_no_legal_moves = False
 
 
-        state = self.state
+        if state == None:
+            state = self.state
         #state = self.reset()
+        else:
+            self.state = state
+
 
         if for_q_value:
             #append 0 to rewards
-            rewards['attacker'].append(0)
+            rewards['attacker'].append(one_step_reward)
             rewards['defender'].append(0)
+            step = 1
         # else: 
         #     state = self.reset()
             
@@ -603,7 +755,10 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
 
                 if game_type == 'nash':
-                    action = self.unconstrained_select_action(nn_state, params[player], policy_net,  subkey, epsilon)
+                    if player == 'attacker':
+                        action = self.unconstrained_select_action(nn_state, params[player], policy_net,  subkey, epsilon)
+                    else:
+                        action = self.get_closer(state, player)
                     state, reward, done, info = self.step(state=state, action=action, player=player, update_env=True)
                     nn_state = self.encode_helper(state)
                     actions[player].append(action)
@@ -614,58 +769,105 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
                 elif game_type == 'stackelberg':
                     legal_actions_mask = self.get_legal_actions_mask(state, player)
                     if sum(legal_actions_mask) != 0:
-                        action = self.constrained_select_action(nn_state, policy_net, params[player], legal_actions_mask, subkey, epsilon)
+                        if player == 'defender':
+                            #action = self.constrained_select_action(nn_state, policy_net, params[player], legal_actions_mask, subkey, epsilon)
+                            action = self.get_closer(state, player)
+                        elif player == 'attacker':
+                            action = self.constrained_select_action(nn_state, policy_net, params[player], legal_actions_mask, subkey, epsilon)
+
+                            #action = self.constrained_deterministic_select_action(nn_state, policy_net, params[player], legal_actions_mask, subkey, epsilon)
+                        #action = self.constrained_select_action(nn_state, policy_net, params[player], legal_actions_mask, subkey, epsilon)
+                        #print(nn_state, player, action)
+                        #print(subkey)
                         action_masks[player].append(legal_actions_mask)
                         state, reward, done, info = self.step(state=state, action=action, player=player, update_env=True)
                         nn_state = self.encode_helper(state)
                         actions[player].append(action)
                         rewards[player].append(reward)
-                    else:
+                    else: #case where a player has no legal moves
                         done = True
                         if player == 'defender': 
-                            attacker_wins = True
-                            info['winner'] = 'attacker'
+                            defender_no_legal_moves = True
                         elif player == 'attacker': 
-                            defender_wins = True
-                            info['winner'] = 'defender'
+                            attacker_no_legal_moves = True
+
+                            
                             
 
 
-
-                
-
-                
-
-                if done and player == 'defender' and info['is_legal'] == True: #only attacker can end the game, iterate one more time
-                    defender_wins = True
-                    wins['defender'] += 1
-                    info['winner'] = 'defender'
-
-                if (defender_wins and player == 'attacker'): #overwrite the attacker's last reward
-                    rewards['attacker'][-1] = -1
-                    done = True
-                    break
-
-                if done and player == 'defender' and info['is_legal'] == False: #only attacker can end the game, iterate one more time
-                    defender_oob = True
-
-                if (defender_oob and player == 'attacker'): #overwrite the attacker's last reward
-                    rewards['attacker'][-1] = 1
-                    done = True
-                    wins['attacker'] += 1
-                    info['winner'] = 'attacker'
-                    break
-
-                if (done and player == 'attacker'): #break if attacker wins, game is over
-                    if info['is_legal']:
+                if player == 'attacker' and done:
+                    if info['status'] == 'goal_reached':
                         attacker_wins = True
-                        wins['attacker'] += 1
-                        info['winner'] = 'attacker'
-                    elif not info['is_legal']:
+                        wins['attacker'] = 1
+                    if info['status'] == 'attacker collided with defender':
                         defender_wins = True
-                        wins['defender'] += 1
-                        info['winner'] = 'defender'
+                        wins['defender'] = 1
+                    if info['status'] == 'out_of_bounds':
+                        defender_wins = True
+                        wins['defender'] = 1
+                    if attacker_no_legal_moves:
+                        defender_wins = True
+                        wins['defender'] = 1
+                        #rewards['attacker'][-1] = -200
                     break
+
+                if player == 'defender' and done:
+                    rewards['attacker'] = rewards['attacker'][:-1]
+                    actions['attacker'] = actions['attacker'][:-1]
+                    if defender_no_legal_moves:
+                        #attacker_wins = True
+                        #wins['attacker'] = 1
+                        #rewards['attacker'][-1] = -20
+                        pass
+                    if info['status'] == 'defender collided with attacker':
+                        defender_wins = True
+                        wins['defender'] = 1
+                        #rewards['attacker'][-1] = -1
+                        pass
+                    break
+
+                # if step == self.max_steps - 1:
+                #     done = True
+                #     defender_wins = True
+                #     wins['defender'] = 1
+                #     rewards['attacker'][-1] = -1
+                #     break
+
+
+                
+
+                
+
+                # if done and player == 'defender' and info['is_legal'] == True: #only attacker can end the game, iterate one more time
+                #     defender_wins = True
+                #     wins['defender'] = 1
+
+                # if (defender_wins and player == 'attacker'): #overwrite the attacker's last reward
+                #     rewards['attacker'][-1] = -1
+                #     done = True
+                #     break
+
+                # if done and player == 'defender' and info['is_legal'] == False: #only attacker can end the game, iterate one more time
+                #     defender_oob = True
+
+                # if (defender_oob and player == 'attacker'): #overwrite the attacker's last reward
+                #     rewards['attacker'][-1] = 1
+                #     done = True
+                #     wins['attacker'] = 1
+                #     break
+
+                # if (done and player == 'attacker'): #break if attacker wins, game is over
+                #     if info['is_legal']:
+                #         attacker_wins = True
+                #         wins['attacker'] = 1
+                #     elif not info['is_legal']:
+                #         defender_wins = True
+                #         wins['defender'] = 1
+                #     break
+                
+                
+                
+                
                 if render:
                     self.render()
 
@@ -673,6 +875,10 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
             step += 1
             #print(step)
+
+        if not defender_wins and not attacker_wins:
+            wins['draw'] = 1
+            #rewards['attacker'][-1] = -1
 
         returns = {player: [] for player in self.players}
 
@@ -691,3 +897,242 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         
 
         return states, actions, action_masks, returns, padding_mask, wins
+
+
+    def single_rollout_eval(self,args):
+        #print("env state" , self.state)
+        game_type, params, policy_net, key, epsilon, gamma, render, for_q_value, one_step_reward, state = args
+
+        if game_type != self.game_type:
+            raise ValueError(f"game_type {game_type} does not match self.game_type {self.game_type}")
+
+
+        states = {player: [] for player in self.players}
+        actions = {player: [] for player in self.players}
+        action_masks = {player: [] for player in self.players}
+        rewards = {player: [] for player in self.players}
+        padding_mask = {player: [] for player in self.players}
+
+        wins = {'attacker': 0, 'defender': 0, 'draw': 0}
+        done = False
+        step = 0
+        defender_wins = False
+        attacker_wins = False
+        defender_oob = False
+
+        defender_no_legal_moves = False
+        attacker_no_legal_moves = False
+
+
+        if state == None:
+            state = self.state
+        #state = self.reset()
+        else:
+            self.state = state
+
+
+        if for_q_value:
+            #append 0 to rewards
+            rewards['attacker'].append(one_step_reward)
+            rewards['defender'].append(0)
+            step = 1
+        # else: 
+        #     state = self.reset()
+            
+        nn_state = self.encode_helper(state)
+
+        def_pos = []
+        y_vals = [1.5, 0,-1.5,-100]
+        subkeys = jax.random.split(key,len(y_vals))
+
+        for i in range(len(y_vals)):
+            pos = np.array([jax.random.uniform(subkeys[i], minval=-1, maxval=1),y_vals[i], np.pi/2])
+            def_pos.append(pos)
+
+        defender_index = 0
+        state['defender'] = def_pos[0]
+        while not done and not defender_wins and not attacker_wins and step < self.max_steps:
+
+            for player in ['attacker']:
+                if state['attacker'][1] < state['defender'][1]:
+                    defender_index+=1
+                    state['defender'] = def_pos[defender_index]
+                states[player].append(nn_state)
+
+                key, subkey = jax.random.split(key)
+
+
+                if game_type == 'nash':
+                    action = self.unconstrained_select_action(nn_state, params[player], policy_net,  subkey, epsilon)
+                    state, reward, done, info = self.step(state=state, action=action, player=player, update_env=True)
+                    nn_state = self.encode_helper(state)
+                    actions[player].append(action)
+                    rewards[player].append(reward)
+                    action_masks[player].append([1]*self.num_actions)
+
+
+                elif game_type == 'stackelberg':
+                    legal_actions_mask = self.get_legal_actions_mask(state, player)
+                    if sum(legal_actions_mask) != 0:
+                        if player == 'defender':
+                            action = self.constrained_select_action(nn_state, policy_net, params[player], legal_actions_mask, subkey, epsilon)
+                        elif player == 'attacker':
+                            action = self.constrained_select_action(nn_state, policy_net, params[player], legal_actions_mask, subkey, epsilon)
+
+                            #action = self.constrained_deterministic_select_action(nn_state, policy_net, params[player], legal_actions_mask, subkey, epsilon)
+                        #action = self.constrained_select_action(nn_state, policy_net, params[player], legal_actions_mask, subkey, epsilon)
+                        #print(nn_state, player, action)
+                        #print(subkey)
+                        action_masks[player].append(legal_actions_mask)
+                        state, reward, done, info = self.step(state=state, action=action, player=player, update_env=True)
+                        nn_state = self.encode_helper(state)
+                        actions[player].append(action)
+                        rewards[player].append(reward)
+                    else: #case where a player has no legal moves
+                        done = True
+                        if player == 'defender': 
+                            defender_no_legal_moves = True
+                        elif player == 'attacker': 
+                            attacker_no_legal_moves = True
+
+                            
+                            
+
+
+                if player == 'attacker' and done:
+                    if info['status'] == 'goal_reached':
+                        attacker_wins = True
+                        wins['attacker'] = 1
+                    if info['status'] == 'attacker collided with defender':
+                        defender_wins = True
+                        wins['defender'] = 1
+                    if info['status'] == 'out_of_bounds':
+                        defender_wins = True
+                        wins['defender'] = 1
+                    if attacker_no_legal_moves:
+                        defender_wins = True
+                        wins['defender'] = 1
+                        #rewards['attacker'][-1] = -200
+                    break
+
+                if player == 'defender' and done:
+                    rewards['attacker'] = rewards['attacker'][:-1]
+                    actions['attacker'] = actions['attacker'][:-1]
+                    if defender_no_legal_moves:
+                        #attacker_wins = True
+                        #wins['attacker'] = 1
+                        #rewards['attacker'][-1] = -20
+                        pass
+                    if info['status'] == 'defender collided with attacker':
+                        #defender_wins = True
+                        #wins['defender'] = 1
+                        #rewards['attacker'][-1] = -1
+                        pass
+                    break
+
+              
+                
+                
+                
+                if render:
+                    self.render_eval(def_pos)
+
+
+
+            step += 1
+            #print(step)
+
+        if not defender_wins and not attacker_wins:
+            wins['draw'] = 1
+            #rewards['attacker'][-1] = -1
+
+        returns = {player: [] for player in self.players}
+
+        for player in self.players:
+            G = 0
+            for r in reversed(rewards['attacker']):
+                G = r + gamma * G
+                returns[player].append(G)
+            
+            returns[player] = list(reversed(returns[player]))
+
+        # if not for_q_value:
+        #     for player in self.players:
+        #         states[player], actions[player], action_masks[player], returns[player], padding_mask[player] = self.pad_and_mask(states[player], actions[player], action_masks[player], returns[player])
+    
+        
+
+        return states, actions, action_masks, returns, padding_mask, wins
+
+
+
+    def render_eval(self, def_pos, mode='human', close=False):
+        """
+        Render the environment for human viewing
+        """
+        import matplotlib.pyplot as plt
+        import matplotlib
+        import io
+        import imageio
+        matplotlib.use('Agg')
+
+
+
+        fig = plt.figure()
+        plt.clf()
+        plt.xlim([-self.size, self.size])
+        plt.ylim([-self.size, self.size])
+
+        # self.positions['attacker'].append(np.array(self.state['attacker'][:2].copy()))
+        # self.positions['defender'].append(np.array(self.state['defender'][:2].copy()))
+
+                # Append current positions and orientations to respective lists
+        self.positions['attacker'].append((self.state['attacker'][:2].copy(), self.state['attacker'][2]))
+        self.positions['defender'].append((self.state['defender'][:2].copy(), self.state['defender'][2]))
+
+
+
+        #  # After adding the attacker, defender and goal
+        # for player, positions in self.positions.items():
+        #     color = 'b' if player == 'attacker' else 'r'
+        #     for pos in positions:
+        #         plt.plot(*pos, marker='o', markersize=2, color=color)
+
+# Plot trails for each player
+        for player, pos_orients in self.positions.items():
+            color = 'b' if player == 'attacker' else 'r'
+            for pos, orient in pos_orients:
+                dx = 0.1 * np.cos(orient)
+                dy = 0.1 * np.sin(orient)
+                plt.arrow(*pos, dx, dy, color=color, head_width=0.1, head_length=0.1)
+    
+
+        attacker = plt.Circle((self.state['attacker'][0], self.state['attacker'][1]), 0.1, color='b', fill=True)
+        
+        
+        for defender in def_pos:
+            defender_plot = plt.Circle((defender[0], defender[1]), self.capture_radius, color='r', fill=True)
+            defender_capture_radius = plt.Circle((defender[0], defender[1]), self.capture_radius+self.v_max, color='r', fill=False, linestyle='--')
+            #plt.gca().add_artist(defender_capture_radius)
+            plt.gca().add_artist(defender_plot)
+        # defender = plt.Circle((self.state['defender'][0], self.state['defender'][1]), self.capture_radius, color='r', fill=True)
+        # defender_capture_radius = plt.Circle((self.state['defender'][0], self.state['defender'][1]), self.capture_radius+self.v_max, color='r', fill=False, linestyle='--')
+
+
+
+        # draw goal
+        goal = plt.Circle((self.goal_position[0], self.goal_position[1]), self.goal_radius, color='g', fill=False)
+
+        # draw obstacle
+        plt.gca().add_artist(attacker)
+        plt.gca().add_artist(goal)
+
+        
+
+        #print('saving')
+        # save current figure to images list
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png')
+        buf.seek(0)
+        self.images.append(np.array(imageio.v2.imread(buf)))
+        plt.close()
