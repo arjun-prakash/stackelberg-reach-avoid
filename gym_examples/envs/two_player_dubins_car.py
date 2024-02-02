@@ -645,7 +645,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             #print(nn_state)
             #print('probs', probs)
             action = jax.random.choice(key, a=self.num_actions, p=probs)
-            #print('probs', probs, 'action', action)
+            print('probs', probs, 'action', action)
             return action
         
     def constrained_deterministic_select_action(self, nn_state, policy_net, params, legal_actions_mask, key, epsilon):
