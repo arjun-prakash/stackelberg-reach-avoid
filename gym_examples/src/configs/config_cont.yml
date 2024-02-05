@@ -1,13 +1,13 @@
 game:
-  type: "nash"
+  type: "stackelberg"
 
 env:
   num_actions: 3
   board_size: 4
   reward: 1
   max_steps: 50
-  init_defender_position: [0.,-1,1.571] 
-  init_attacker_position: [0,3.5, 4.712] 
+  init_defender_position: [0.,-1] 
+  init_attacker_position: [0,3.5] 
   goal_position: [0,-3] 
   goal_radius: 1.0
   capture_radius: 0.3
@@ -28,7 +28,7 @@ hyperparameters:
 
 training:
   batch_multiple: 1
-  num_parallel: 32
+  num_parallel: 1
   num_episodes: 64001
   loaded_params: None
   

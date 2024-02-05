@@ -1,5 +1,5 @@
 game:
-  type: "nash"
+  type: "stackelberg"
 
 env:
   num_actions: 3
@@ -8,19 +8,19 @@ env:
   max_steps: 50
   init_defender_position: [0.,-1,1.571] 
   init_attacker_position: [0,3.5, 4.712] 
-  goal_position: [0,-3] 
+  goal_position: [0,-4] 
   goal_radius: 1.0
-  capture_radius: 0.3
+  capture_radius: 0.25
   timestep: 1
   velocity: 0.25
-  turning_angle: 30
-  reward_type: "dense"
+  turning_angle: 65
+  reward_type: "-dense punish attacker"
   training_method: "unbalanced (every 3 attacker, 1 defender), mixed attacker"
-  note: "soft radius, penalised illegal moves. adding penalty for getting caught. attacker y is 3,2,1 can go back. Need to change the done conditions back to false for stackelberg"
+  note: "soft radius, penalised illegal moves. This one has no penalty for getting caught. attacker y is 3,2,1 can go back. Need to change the done conditions back to false for stackelberg"
   
 
 hyperparameters:
-  learning_rate: 0.0001
+  learning_rate: 0.001
   gamma: 0.99
   epsilon_start: 0.001
   epsilon_end: 0.001
@@ -29,21 +29,21 @@ hyperparameters:
 training:
   batch_multiple: 1
   num_parallel: 32
-  num_episodes: 64001
+  num_episodes: 5000
   loaded_params: None
   
 
 eval:
-  eval_interval: 512
-  num_eval_episodes: 32
+  eval_interval: 128
+  num_eval_episodes: 16
 
 #these are hard coded!
 architecture:
   optimizer:
-    optimizer: radam betas .9
+    optimizer: radam betas .9 
   network:
     type: "mlp"
-    hidden_layers: [64, 64, 64, 64]
+    hidden_layers: [64, 64]
     activation: "relu"
     output_activation: "linear"
 
