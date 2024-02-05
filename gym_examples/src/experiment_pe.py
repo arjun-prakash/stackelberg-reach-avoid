@@ -138,7 +138,7 @@ def parallel_nash_reinforce(
             for k in keys
         ]
         with ProcessPool() as pool:
-            results = pool.map(env.single_rollout_nash, args)
+            results = pool.map(env.single_rollout, args)
         (
             all_states,
             all_actions,
@@ -253,12 +253,12 @@ def parallel_nash_reinforce(
 
     def save_params(episode_num, params, value_params, game_type, timestamp):
         with open(
-            f"data/experiment_{game_type}/{timestamp}_episode_{episode_num}_params.pickle", "wb"
+            f"data/pe_{game_type}/{timestamp}_episode_{episode_num}_params.pickle", "wb"
         ) as handle:
             pickle.dump(params, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
         with open(
-            f"data/experiment_{game_type}/{timestamp}_episode_{episode_num}_value_params.pickle", "wb"
+            f"data/pe_{game_type}/{timestamp}_episode_{episode_num}_value_params.pickle", "wb"
         ) as handle:
             pickle.dump(value_params, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
@@ -388,7 +388,7 @@ def parallel_nash_reinforce(
         )
 
         if episode % eval_interval == 0:
-            _, _, _, _, _, _ = env.single_rollout(
+            _, _, _, _, _, _ = env.single_rollout_nash(
                 [
                     "nash",
                     params,
@@ -402,7 +402,7 @@ def parallel_nash_reinforce(
                     None
                 ]
             )
-            env.make_gif(f"gifs/experiment_nash/{timestamp}_{episode}.gif")
+            env.make_gif(f"gifs/persuit_evasion/{timestamp}_{episode}.gif")
             save_params(episode, params, value_params, "nash", timestamp)
 
             # bellman_error = calc_bellman_error(env, params, policy_net, num_eval_episodes, jax.random.PRNGKey(episode), epsilon, gamma)
@@ -884,7 +884,7 @@ def parallel_stackelberg_reinforce(
                     None
                 ]
             )
-            env.make_gif(f"gifs/dub_debug/{timestamp}_{episode}.gif")
+            env.make_gif(f"gifs/persuit_evasion/{timestamp}_{episode}.gif")
             save_params(episode, params,value_params, "stackelberg", timestamp)
 
             # bellman_error = calc_bellman_error(env, params, policy_net, num_eval_episodes, jax.random.PRNGKey(episode), epsilon, gamma)
@@ -1018,13 +1018,13 @@ def print_config(config):
 
 
 if __name__ == "__main__":
-    config = load_config("configs/config.yml")
+    config = load_config("configs/config_pe.yml")
     print_config(config)
     
     game_type = config['game']['type']
     timestamp = str(datetime.datetime.now())
 
-    env = TwoPlayerDubinsCarEnv(
+    env = TwoPlayerDubinsCarPEEnv(
         game_type=game_type,
         num_actions=config['env']['num_actions'],
         size=config['env']['board_size'],
@@ -1062,7 +1062,7 @@ if __name__ == "__main__":
 
     # Logging
     print(game_type, " starting experiment at :", timestamp)
-    writer = SummaryWriter(f"runs_10_baseline/experiment_{game_type}" + timestamp)
+    writer = SummaryWriter(f"runs_10_baseline/experiment_{game_type}" + timestamp+"persuit-evasion")
     #Load data (deserialize)
     # with open('/users/apraka15/arjun/gym-examples/gym_examples/src/data/experiment_stackelberg/2023-09-15 10:22:44.481035_episode_12224_params.pickle', 'rb') as handle:
     #     loaded_params = pickle.load(handle)

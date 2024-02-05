@@ -220,20 +220,20 @@ class TwoPlayerDubinsCarPEEnv(DubinsCarEnv):
         #reward = -((dist_goal - self.goal_radius)**2)/ max_distance**2
         #reward = -((dist_goal - self.goal_radius)**2)
         dist_capture = np.linalg.norm(next_state['attacker'][:2] - next_state['defender'][:2])
-        reward = -dist_capture
+        reward = dist_capture**2
 
 
 
         # wrapping around
-        if next_state[player][0] < self.observation_space[player].low[0]:
-            next_state[player][0] = self.observation_space[player].high[0]
-        elif next_state[player][0] > self.observation_space[player].high[0]:
-            next_state[player][0] = self.observation_space[player].low[0]
+        # if next_state[player][0] < self.observation_space[player].low[0]:
+        #     next_state[player][0] = self.observation_space[player].high[0]
+        # elif next_state[player][0] > self.observation_space[player].high[0]:
+        #     next_state[player][0] = self.observation_space[player].low[0]
 
-        if next_state[player][1] < self.observation_space[player].low[1]:
-            next_state[player][1] = self.observation_space[player].high[1]
-        elif next_state[player][1] > self.observation_space[player].high[1]:
-            next_state[player][1] = self.observation_space[player].low[1]
+        # if next_state[player][1] < self.observation_space[player].low[1]:
+        #     next_state[player][1] = self.observation_space[player].high[1]
+        # elif next_state[player][1] > self.observation_space[player].high[1]:
+        #     next_state[player][1] = self.observation_space[player].low[1]
 
 
         # out_of_bounds = False
@@ -415,11 +415,9 @@ class TwoPlayerDubinsCarPEEnv(DubinsCarEnv):
 
         fig = plt.figure()
         plt.clf()
-        plt.xlim([-self.size, self.size])
-        plt.ylim([-self.size, self.size])
-
-        # self.positions['attacker'].append(np.array(self.state['attacker'][:2].copy()))
-        # self.positions['defender'].append(np.array(self.state['defender'][:2].copy()))
+            # Set initial plot limits
+        x_min, x_max = -self.size, self.size
+        y_min, y_max = -self.size, self.size
 
                 # Append current positions and orientations to respective lists
         self.positions['attacker'].append((self.state['attacker'][:2].copy(), self.state['attacker'][2]))
@@ -440,7 +438,16 @@ class TwoPlayerDubinsCarPEEnv(DubinsCarEnv):
                 dx = 0.1 * np.cos(orient)
                 dy = 0.1 * np.sin(orient)
                 plt.arrow(*pos, dx, dy, color=color, head_width=0.1, head_length=0.1)
-    
+
+                x_min = min(x_min, pos[0])
+                x_max = max(x_max, pos[0])
+                y_min = min(y_min, pos[1])
+                y_max = max(y_max, pos[1])
+            
+
+        padding = 0.5
+        plt.xlim([x_min - padding, x_max + padding])
+        plt.ylim([y_min - padding, y_max + padding])
 
         attacker = plt.Circle((self.state['attacker'][0], self.state['attacker'][1]), 0.1, color='b', fill=True)
         defender = plt.Circle((self.state['defender'][0], self.state['defender'][1]), self.capture_radius, color='r', fill=True)
@@ -691,7 +698,269 @@ class TwoPlayerDubinsCarPEEnv(DubinsCarEnv):
 
 
 
+    def single_rollout_nash(self,args):
+            #print("env state" , self.state)
+            game_type, params, policy_net, key, epsilon, gamma, render, for_q_value, one_step_reward, state = args
 
+            if game_type != self.game_type:
+                raise ValueError(f"game_type {game_type} does not match self.game_type {self.game_type}")
+
+
+            states = {player: [] for player in self.players}
+            actions = {player: [] for player in self.players}
+            action_masks = {player: [] for player in self.players}
+            rewards = {player: [] for player in self.players}
+            padding_mask = {player: [] for player in self.players}
+
+            wins = {'attacker': 0, 'defender': 0, 'draw': 0}
+            done = False
+            step = 0
+            defender_wins = False
+            attacker_wins = False
+            defender_oob = False
+
+            defender_no_legal_moves = False
+            attacker_no_legal_moves = False
+
+
+            if state == None:
+                state = self.state
+            #state = self.reset()
+            else:
+                self.state = state
+
+
+            if for_q_value:
+                #append 0 to rewards
+                rewards['attacker'].append(one_step_reward)
+                rewards['defender'].append(0)
+                step = 1
+            # else: 
+            #     state = self.reset()
+                
+            nn_state = self.encode_helper(state)
+
+
+            while not done and not defender_wins and not attacker_wins and step < self.max_steps:
+
+                key, subkey = jax.random.split(key)
+
+                leader_action = self.unconstrained_select_action(nn_state, params['defender'], policy_net,  subkey, epsilon)
+                follower_action = self.unconstrained_select_action(nn_state, params['attacker'], policy_net,  subkey, epsilon)
+                state, reward, done, info = self.step(state=state, action=leader_action, player='defender', update_env=True)
+                state, reward, done, info = self.step(state=state, action=follower_action, player='attacker', update_env=True)
+                actions['defender'].append(leader_action)
+                actions['attacker'].append(follower_action)
+
+
+                nn_state = self.encode_helper(state)
+                for player in self.players:
+                    rewards[player].append(reward)
+                    action_masks[player].append([1]*self.num_actions)
+                    states[player].append(nn_state)
+
+        
+
+                if player == 'attacker' and done:
+                    if info['status'] == 'goal_reached':
+                        attacker_wins = True
+                        wins['attacker'] = 1
+                    if info['status'] == 'attacker collided with defender':
+                        defender_wins = True
+                        wins['defender'] = 1
+                    if info['status'] == 'out_of_bounds':
+                        defender_wins = True
+                        wins['defender'] = 1
+                    if attacker_no_legal_moves:
+                        defender_wins = True
+                        wins['defender'] = 1
+                        #rewards['attacker'][-1] = -200
+                    break
+
+                if player == 'defender' and done:
+                    rewards['attacker'] = rewards['attacker'][:-1]
+                    actions['attacker'] = actions['attacker'][:-1]
+                    if defender_no_legal_moves:
+                        #attacker_wins = True
+                        #wins['attacker'] = 1
+                        #rewards['attacker'][-1] = -20
+                        pass
+                    if info['status'] == 'defender collided with attacker':
+                        defender_wins = True
+                        wins['defender'] = 1
+                        #rewards['attacker'][-1] = -1
+                        pass
+                    break
+
+                
+                
+                
+                
+                if render:
+                    self.render()
+
+
+
+                step += 1
+                #print(step)
+
+            if not defender_wins and not attacker_wins:
+                wins['draw'] = 1
+                #rewards['attacker'][-1] = -1
+
+            returns = {player: [] for player in self.players}
+
+            for player in self.players:
+                G = 0
+                for r in reversed(rewards['attacker']):
+                    G = r + gamma * G
+                    returns[player].append(G)
+                
+                returns[player] = list(reversed(returns[player]))
+
+            if not for_q_value:
+                for player in self.players:
+                    states[player], actions[player], action_masks[player], returns[player], padding_mask[player] = self.pad_and_mask(states[player], actions[player], action_masks[player], returns[player])
+        
+            
+
+            return states, actions, action_masks, returns, padding_mask, wins
+
+
+    def single_rollout_stackelberg(self,args):
+        #print("env state" , self.state)
+        game_type, params, policy_net, key, epsilon, gamma, render, for_q_value, one_step_reward, state = args
+
+        if game_type != self.game_type:
+            raise ValueError(f"game_type {game_type} does not match self.game_type {self.game_type}")
+
+
+        states = {player: [] for player in self.players}
+        actions = {player: [] for player in self.players}
+        action_masks = {player: [] for player in self.players}
+        rewards = {player: [] for player in self.players}
+        padding_mask = {player: [] for player in self.players}
+
+        wins = {'attacker': 0, 'defender': 0, 'draw': 0}
+        done = False
+        step = 0
+        defender_wins = False
+        attacker_wins = False
+        defender_oob = False
+
+        defender_no_legal_moves = False
+        attacker_no_legal_moves = False
+
+
+        if state == None:
+            state = self.state
+        #state = self.reset()
+        else:
+            self.state = state
+
+
+        if for_q_value:
+            #append 0 to rewards
+            rewards['attacker'].append(one_step_reward)
+            rewards['defender'].append(0)
+            step = 1
+        # else: 
+        #     state = self.reset()
+            
+        nn_state = self.encode_helper(state)
+
+
+        while not done and not defender_wins and not attacker_wins and step < self.max_steps:
+            for player in self.players:
+                states[player].append(nn_state)
+
+                key, subkey = jax.random.split(key)
+
+                legal_actions_mask = self.get_legal_actions_mask2(state, player)
+                if sum(legal_actions_mask) != 0:
+                    action = self.constrained_select_action(nn_state, policy_net, params[player], legal_actions_mask, subkey, epsilon)
+
+                    #action = self.constrained_deterministic_select_action(nn_state, policy_net, params[player], legal_actions_mask, subkey, epsilon)
+                    #action = self.constrained_select_action(nn_state, policy_net, params[player], legal_actions_mask, subkey, epsilon)
+                    #print(nn_state, player, action)
+                    #print(subkey)
+                    action_masks[player].append(legal_actions_mask)
+                    state, reward, done, info = self.step(state=state, action=action, player=player, update_env=True)
+                    nn_state = self.encode_helper(state)
+                    actions[player].append(action)
+                    rewards[player].append(reward)
+                else: #case where a player has no legal moves
+                    done = True
+                    if player == 'defender': 
+                        defender_no_legal_moves = True
+                    elif player == 'attacker': 
+                        attacker_no_legal_moves = True
+
+                            
+                            
+
+
+                if player == 'attacker' and done:
+                    if info['status'] == 'goal_reached':
+                        attacker_wins = True
+                        wins['attacker'] = 1
+                    if info['status'] == 'attacker collided with defender':
+                        defender_wins = True
+                        wins['defender'] = 1
+                    if info['status'] == 'out_of_bounds':
+                        defender_wins = True
+                        wins['defender'] = 1
+                    if attacker_no_legal_moves:
+                        defender_wins = True
+                        wins['defender'] = 1
+                        #rewards['attacker'][-1] = -200
+                    break
+
+                if player == 'defender' and done:
+                    rewards['attacker'] = rewards['attacker'][:-1]
+                    actions['attacker'] = actions['attacker'][:-1]
+                    if defender_no_legal_moves:
+                        #attacker_wins = True
+                        #wins['attacker'] = 1
+                        #rewards['attacker'][-1] = -20
+                        pass
+                    if info['status'] == 'defender collided with attacker':
+                        defender_wins = True
+                        wins['defender'] = 1
+                        #rewards['attacker'][-1] = -1
+                        pass
+                    break
+                
+                
+                if render:
+                    self.render()
+
+
+
+            step += 1
+            #print(step)
+
+        if not defender_wins and not attacker_wins:
+            wins['draw'] = 1
+            #rewards['attacker'][-1] = -1
+
+        returns = {player: [] for player in self.players}
+
+        for player in self.players:
+            G = 0
+            for r in reversed(rewards['attacker']):
+                G = r + gamma * G
+                returns[player].append(G)
+            
+            returns[player] = list(reversed(returns[player]))
+
+        if not for_q_value:
+            for player in self.players:
+                states[player], actions[player], action_masks[player], returns[player], padding_mask[player] = self.pad_and_mask(states[player], actions[player], action_masks[player], returns[player])
+    
+        
+
+        return states, actions, action_masks, returns, padding_mask, wins
 
         
     def single_rollout(self,args):
