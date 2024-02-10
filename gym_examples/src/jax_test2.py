@@ -30,6 +30,9 @@ from jax_tqdm import scan_tqdm, loop_tqdm
 
 from jax import config
 #config.update('jax_platform_name', 'gpu')
+# config.update('jax_disable_jit', True)
+
+# config.update('jax_enable_x64', True)
 
 
 
@@ -76,15 +79,16 @@ def rollout(rng_input, init_state, init_nn_state, params_defender, params_attack
         """lax.scan compatible step transition in JAX environment."""
         state, nn_state, prev_done, rng = state_input
         rng, rng_step = jax.random.split(rng)
+        #rng_step = rng
         #action_defender = random_policy(rng_step)
         action_defender = select_action(params_defender, policy_net, nn_state, rng_step)
-        next_state, nn_state, reward, cur_done = env.step(rng_step, state, action_defender, 'defender')
+        next_state, _, reward, cur_done = env.step(state, action_defender, 'defender')
         #action_attacker = random_policy(rng_step)
         action_attacker =select_action(params_attacker, policy_net, nn_state, rng_step)
-        next_state, _, reward, next_done = env.step(rng_step, next_state, action_attacker, 'attacker')
+        next_state, next_nn_state, reward, next_done = env.step(next_state, action_attacker, 'attacker')
         next_done = jnp.logical_or(cur_done, next_done)
         done = jnp.logical_or(prev_done, next_done)
-        carry = (next_state,nn_state, done, rng_step)
+        carry = (next_state,next_nn_state, done, rng_step)
 
 
         return carry, (action_defender, action_attacker, next_state, nn_state,reward, done) #only carrying the attacker reward
@@ -99,7 +103,8 @@ def rollout(rng_input, init_state, init_nn_state, params_defender, params_attack
         
         # Step 3: Calculate discounted rewards
         discounts = discount_factor ** jnp.arange(masked_rewards_reversed.size)
-        discounted_rewards_reversed = masked_rewards_reversed * discounts
+        discounted_rewards_reversed = masked_rewards_reversed * jnp.flip(discounts)
+        #print(discounted_rewards_reversed)
         
         # Step 4: Cumulative sum for reversed rewards
         cumulative_rewards_reversed = jnp.cumsum(discounted_rewards_reversed)
@@ -133,6 +138,8 @@ def rollout(rng_input, init_state, init_nn_state, params_defender, params_attack
 
 
     rng_reset, rng_episode = jax.random.split(rng_input)
+    #jax.debug.print(f'rng: {rng_input}')
+    #jax.debug.print(f'init_state: {init_nn_state}')
     
     
     #if not set_env reset
@@ -142,7 +149,8 @@ def rollout(rng_input, init_state, init_nn_state, params_defender, params_attack
 
 
     # Scan over the episode step loop
-    initial_carry = (init_state, init_nn_state, False, rng_episode)
+    initial_carry = (init_state, init_nn_state, False, rng_episode) #rng_episode
+    
     _, scan_out = jax.lax.scan(policy_step, initial_carry, None, length=steps_in_episode)
 
     # Unpack scan output
@@ -150,10 +158,11 @@ def rollout(rng_input, init_state, init_nn_state, params_defender, params_attack
     mask = jnp.logical_not(dones)
     #update networks
 
+
     returns = calculate_discounted_returns(rewards, 0.99, mask)
 
 
-    return actions_defender, actions_attacker, states, nn_states, returns, dones
+    return actions_defender, actions_attacker, states, nn_states, returns, dones, rewards
 
 
 
@@ -351,7 +360,7 @@ def train():
         keys = jax.random.split(rng_input, num=32)
         init_obs, initial_states, initial_nn_states = batched_env_reset(keys)
 
-        all_actions_defender, all_actions_attacker, all_states, all_nn_states, all_returns, all_dones = batched_rollout(keys,  initial_states, initial_nn_states, params_defender, params_attacker, steps_in_episode)
+        all_actions_defender, all_actions_attacker, all_states, all_nn_states, all_returns, all_dones, all_rewards = batched_rollout(keys,  initial_states, initial_nn_states, params_defender, params_attacker, steps_in_episode)
 
         all_masks = jnp.logical_not(all_dones)
 
@@ -443,7 +452,7 @@ def train():
     opt_state_defender = optimizer_defender.init(params_defender)
     opt_state_value = value_optimizer.init(params_value)
 
-    num_iters = 10000
+    num_iters = 2000
 
     all_metrics = jnp.zeros((num_iters, 4))  # Assuming 4 metrics and 'num_iterations' training steps
 
@@ -488,23 +497,16 @@ def get_q_matrix(rng_input, params_defender, params_attacker, steps_in_episode):
 
     def apply_actions(state, actions, rng_input):
         action_defender, action_attacker = actions
-        next_state, nn_state, _, _ = env.step(rng_input, state, action_defender, 'defender')
-        init_state, init_nn_state, reward, _ = env.step(rng_input, next_state, action_attacker, 'attacker')
+        next_state, nn_state, _, _ = env.step(state, action_defender, 'defender')
+        init_state, init_nn_state, reward, _ = env.step(next_state, action_attacker, 'attacker')
         return init_state, init_nn_state, reward
     
-    def batched_env_reset(rng_keys):
-        # Vectorize the existing env.reset function to handle batched PRNG keys
-        batched_reset = jax.vmap(env.reset)
-        
-        # Call the vectorized reset function with the batched PRNG keys
-        init_obs, initial_states, nn_states = batched_reset(rng_keys)
-        
-        return init_obs, initial_states, nn_states
 
 
     obs, state, nn_state = env.reset(rng_input)
-    defender_actions = jnp.array([0, 1, 2])
-    attacker_actions = jnp.array([0, 1, 2])
+    print('q_matrix state', state)
+    defender_actions = jnp.array([0,1,2])
+    attacker_actions = jnp.array([0,1,2])
     action_pairs = jnp.array(list(itertools.product(defender_actions, attacker_actions)))
 
     # Vectorize the apply_actions function to handle all action pairs in parallel
@@ -513,25 +515,31 @@ def get_q_matrix(rng_input, params_defender, params_attacker, steps_in_episode):
     # Apply all action pairs to the initial state
     init_states, init_nn_states, rewards = batch_apply_actions(state, action_pairs, rng_input)
     rewards = jnp.array(rewards).reshape(len(defender_actions), len(attacker_actions))
-
+    #print('init_nn_states q', init_nn_states)
     # Ensure your rollout function can handle batched inputs
     # Vectorize the rollout function to handle all initial states from action pairs in parallel
-    batched_rollout = jax.vmap(rollout, in_axes=(None,0,0, None, None, None), out_axes=0)
+    batched_rollout = jax.vmap(rollout, in_axes=(None,0,0, None, None, None))
 
     # Perform batched rollouts
-    _, _, _, _, returns, _ = batched_rollout(rng_input, init_states, init_nn_states, params_defender, params_attacker, 50)
-    
+    _, _, states, _, returns, _, rewards_traj = batched_rollout(rng_input, init_states, init_nn_states, params_defender, params_attacker,9)
+    print('in get_q_matrix')
+    # print(rewards)
+    # print(rewards_traj)
+
     #get the first return for each action pair
-    #print(returns)
     returns = jnp.array([r[0] for r in returns])
-
-
 
 
     # Reshape Q-values into a matrix
     #row player is defener, 
     q_matrix = returns.reshape(len(defender_actions), len(attacker_actions))
-    q_matrix = rewards + 0.99 * q_matrix
+    q_matrix = rewards +  .99*q_matrix
+    # print('in q_matrix')
+    # print('rewards1', rewards)
+    # print('returns2', returns)
+    # print()
+
+
 
     return q_matrix
 
@@ -567,7 +575,7 @@ rng_input = jax.random.PRNGKey(1)
 steps_in_episode = 50
 #actions_defender, actions_attacker, states,rewards, dones = rollout(rng_input, steps_in_episode)
 steps_in_episode = 50
-num_episodes = 10000
+num_episodes = 2000
 
 
 steps_in_episode = 50
@@ -576,7 +584,7 @@ obs, state ,nn_state = env.reset(rng_input)
 state = env.encode_helper(state)
 print(state.shape)
 
-is_train = False
+is_train = True
 
 if is_train:
     output = train()
@@ -611,6 +619,10 @@ else:
     with open('data/jax_nash/jax_nash_attacker.pickle', 'rb') as handle:
         params_attacker = pickle.load(handle)
     rng_input = jax.random.PRNGKey(6667)
+    policy_net = hk.without_apply_rng(hk.transform(policy_network))
+    params_defender = policy_net.init(rng_input, nn_state)
+    params_attacker = policy_net.init(rng_input, nn_state)
+
 
 
 
@@ -620,21 +632,37 @@ policy_net = hk.without_apply_rng(hk.transform(policy_network))
 value_net = hk.without_apply_rng(hk.transform(value_network))
 
 obs, state, nn_state = env.reset(rng_input)
+print('rollout state', state)
 
-actions_defender, actions_attacker, states, nn_states, returns, dones= rollout(rng_input, state, nn_state, params_defender, params_attacker, steps_in_episode)
-#verage_return, attacker_norm, defender_norm, current_value_loss
+# actions_defender, actions_attacker, states, nn_states, returns1, dones, rewards= rollout(rng_input, state, nn_state, params_defender, params_attacker, 1)
 
-# Example of vectorizing the rollout function
 
-#getting q-values
+# next_state, nn_state, _, _ = env.step(state, 0, 'defender')
+# init_state, init_nn_state, reward, _ = env.step(next_state, 0, 'attacker')
+# print('init_state manual', init_nn_state)
+# _, _, states, nn_states, returns2, dones, rewards= rollout(rng_input, init_state, nn_state, params_defender, params_attacker, 1)
+# #getting q-values
 q_matrix = get_q_matrix(rng_input, params_defender, params_attacker, steps_in_episode)
 print(q_matrix)
+# print('rolliut')
+# print('returns1' , returns1)
+# print('returns2' , returns2)
+# #getting q-values
+# new_rets =returns1 +.99*returns2
+
+# print(q_matrix - new_rets)
+
+actions_defender, actions_attacker, states, nn_states, returns, dones, rewards = rollout(rng_input, state, nn_state, params_defender, params_attacker,10)
+# print('rollout')
+# print(states)
+
+
+print('returns rollout')
 print(returns[0])
-
-#getting q-values
-
 print('rendering')
 states = convert_state_to_list(states)
 env.render(states, dones)
 env.make_gif('gifs/jax/test.gif')
-
+print(actions_defender)
+print(actions_attacker)
+#rember to change seeds back
