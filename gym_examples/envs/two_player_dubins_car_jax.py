@@ -1,5 +1,6 @@
 
 
+import itertools
 import gym
 from gym import spaces
 import numpy as np
@@ -8,6 +9,8 @@ import copy
 import jax.numpy as jnp
 import haiku as hk
 import optax
+import jax.numpy as jnp
+from jax import jit, vmap
 
 
 from envs.dubins_car import DubinsCarEnv
@@ -51,15 +54,17 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
     def _reset(self, key):
         # Use JAX random to set initial positions if needed
         key, subkey1, subkey2 = jax.random.split(key, 3)
+        down = 3 * np.pi / 2
+        up = np.pi / 2
 
         # Example of setting random positions; adapt as necessary for your environment
-        defender_x = jax.random.uniform(subkey1, minval=0, maxval=0)
+        defender_x = jax.random.uniform(subkey1, minval=-1, maxval=1)
         defender_y = jax.random.uniform(subkey1, minval=-2, maxval=-2)
-        defender_theta = jax.random.uniform(subkey1, minval=0, maxval=2 * jnp.pi)
+        defender_theta = jax.random.uniform(subkey1, minval=up, maxval=up)
 
         attacker_x = jax.random.uniform(subkey2, minval=-self.size, maxval=self.size)
         attacker_y = jax.random.uniform(subkey2, minval=2, maxval=self.size)
-        attacker_theta = jax.random.uniform(subkey2, minval=0, maxval=2 * jnp.pi)
+        attacker_theta = jax.random.uniform(subkey2, minval=down, maxval=down)
 
         # Set initial state using provided positions or randomized ones
         state = {
@@ -120,14 +125,19 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         dist_goal = jnp.linalg.norm(state['attacker'][:2] - self.goal_position)
 
         # Check if the attacker has reached the goal
-        done_win = dist_goal < self.goal_radius
+        win = dist_goal < self.goal_radius
 
         # Check if the attacker is caught by the defender
-        done_loss = jnp.linalg.norm(state['attacker'][:2] - state['defender'][:2]) < self.capture_radius
+        loss = jnp.linalg.norm(state['attacker'][:2] - state['defender'][:2]) < self.capture_radius
 
         # Assign rewards based on the conditions
-        reward = jnp.where(done_win, 200, -((dist_goal - self.goal_radius)**2))
-        reward = jnp.where(done_loss, -200, reward)
+        reward = jnp.where(win, 200, -((dist_goal - self.goal_radius)**2))
+        reward = jnp.where(loss, -200, reward)
+
+        done_win = dist_goal < self.goal_radius - 0.125
+        done_loss = jnp.linalg.norm(state['attacker'][:2] - state['defender'][:2]) < self.capture_radius - 0.125
+
+
 
         # Determine if the episode is done (either win or loss)
         done = jnp.logical_or(done_win, done_loss)
@@ -143,13 +153,15 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             None,
         )
     
-    def step(self, key, env_state, action, player):
+    def step(self, env_state, action, player):
         state = env_state
         new_state = self._update_state(state, action, player)
         reward, done = self._get_reward_done(new_state, player)
         #new_state = self._reset_if_done(key, new_state, done)
         nn_state = self.encode_helper(new_state)
         return new_state, nn_state, reward, done
+    
+    
 
     def reset(self, key):
         # Implement the reset logic
@@ -160,6 +172,42 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
 
 
+
+    
+    def get_legal_actions_mask2(self, state):
+            # Define a helper function to check if the 'attacker' gets captured by the 'defender'
+        def apply_actions(state, actions):
+            action_defender, action_attacker = actions
+            next_state, nn_state, _, _ = self.step(state, action_attacker, 'attacker')
+            init_state, init_nn_state, reward, done = self.step(next_state, action_defender, 'defender')
+            #check reward is -200 and done is true
+            is_legal = jax.lax.cond(
+                jnp.logical_and(reward == -200, done == True),
+                lambda _: 0,
+                lambda _: 1,
+                None,
+            )
+            
+            return is_legal
+        # JIT compile the helper function for efficiency
+
+        defender_actions = jnp.array([0,1,2])
+        attacker_actions = jnp.array([0,1,2])
+        action_pairs = jnp.array(list(itertools.product(defender_actions, attacker_actions)))
+
+        # Vectorize the apply_actions function to handle all action pairs in parallel
+        batch_apply_actions = jax.vmap(apply_actions, in_axes=(None, 0))
+
+        # Apply all action pairs to the initial state
+
+        is_legal = batch_apply_actions(state, action_pairs)
+        is_legal = is_legal.reshape(len(defender_actions), len(attacker_actions))
+
+        #check all cols are 1
+        mask = jnp.any(is_legal, axis=0)
+
+        
+        return mask
 
 
 
@@ -181,7 +229,9 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
 
 
+    
 
+   
 
             
 
