@@ -37,7 +37,7 @@ from nashpy import Game
 
 STEPS_IN_EPISODE = 50
 BATCH_SIZE = 32
-NUM_ITERS = 5000
+NUM_ITERS = 50000
 is_train = False
 
 
@@ -58,6 +58,64 @@ ENV = TwoPlayerDubinsCarEnv(
     )   
 
 
+
+def get_q_matrix(rng_input, state, nn_state, params_defender, params_attacker, steps_in_episode):
+
+    env = ENV
+
+    def apply_actions(state, actions, rng_input):
+        action_defender, action_attacker = actions
+        next_state, nn_state, _, _ = env.step(state, action_defender, 'defender')
+        init_state, init_nn_state, reward, _ = env.step(next_state, action_attacker, 'attacker')
+        return init_state, init_nn_state, reward
+    
+
+
+    defender_actions = jnp.array([0,1,2])
+    attacker_actions = jnp.array([0,1,2])
+    action_pairs = jnp.array(list(itertools.product(defender_actions, attacker_actions)))
+
+    # Vectorize the apply_actions function to handle all action pairs in parallel
+    batch_apply_actions = jax.vmap(apply_actions, in_axes=(None, 0, None))
+
+    # Apply all action pairs to the initial state
+    init_states, init_nn_states, rewards = batch_apply_actions(state, action_pairs, rng_input)
+    rewards = jnp.array(rewards).reshape(len(defender_actions), len(attacker_actions))
+    #print('init_nn_states q', init_nn_states)
+    # Ensure your rollout function can handle batched inputs
+    # Vectorize the rollout function to handle all initial states from action pairs in parallel
+    batched_rollout = jax.vmap(rollout, in_axes=(None,0,0, None, None, None))
+
+    # Perform batched rollouts
+    _, _, states, _, returns, _, rewards_traj = batched_rollout(rng_input, init_states, init_nn_states, params_defender, params_attacker,STEPS_IN_EPISODE-1)
+
+
+    #get the first return for each action pair
+    returns = jnp.array([r[0] for r in returns])
+
+
+    # Reshape Q-values into a matrix
+    #row player is defener, 
+    q_matrix = returns.reshape(len(defender_actions), len(attacker_actions))
+    q_matrix = rewards +  .99*q_matrix
+
+
+    return q_matrix
+
+def solve_nash(q_matrix, v):
+
+    g = Game(q_matrix)
+    eqs = list(g.support_enumeration())
+    if len(eqs) > 0:
+        payoff =  jnp.array(g[eqs[0]][0])
+    else:
+        payoff =  jnp.nan
+
+    error = payoff - v
+
+    return jnp.abs(error)
+
+
 @jax.jit
 def get_q_and_v(rng_input, params_defender, params_attacker):
 
@@ -67,9 +125,9 @@ def get_q_and_v(rng_input, params_defender, params_attacker):
     obs, state, nn_state = ENV.reset(rng_input)
     batched_get_q_matrix = jax.vmap(get_q_matrix, in_axes=(0, None, None, None, None, None))
     batched_rollout = jax.vmap(rollout, in_axes=(0,None,None, None, None, None), out_axes=0)
-    keys = jax.random.split(rng_input, num=BATCH_SIZE)
+    keys = jax.random.split(rng_input, num=BATCH_SIZE*2)
     q_matricies = batched_get_q_matrix(keys, state, nn_state, params_defender, params_attacker, STEPS_IN_EPISODE)
-    rollouts = batched_rollout(keys, state, nn_state, params_defender, params_attacker, STEPS_IN_EPISODE-1)
+    rollouts = batched_rollout(keys, state, nn_state, params_defender, params_attacker, STEPS_IN_EPISODE)
 
     q_matrix = jnp.mean(q_matricies, axis=0)
     returns = jnp.mean(jnp.array([r[0] for r in rollouts[4]]))
@@ -117,6 +175,11 @@ def rollout(rng_input, init_state, init_nn_state, params_defender, params_attack
     """
     # Reset the environment
 
+    def check_done(prev_done, next_done):
+        "delay done by one step to get bonus"
+        result = jnp.logical_or(prev_done, jnp.logical_and(prev_done, next_done))
+        return result
+
     def policy_step(state_input, _):
         """lax.scan compatible step transition in JAX environment."""
         state, nn_state, prev_done, rng = state_input
@@ -130,10 +193,15 @@ def rollout(rng_input, init_state, init_nn_state, params_defender, params_attack
         next_state, next_nn_state, reward, next_done = env.step(next_state, action_attacker, 'attacker')
         next_done = jnp.logical_or(cur_done, next_done)
         done = jnp.logical_or(prev_done, next_done)
+        is_terminal = check_done(prev_done, next_done)
+
+
+
+
         carry = (next_state,next_nn_state, done, rng_step)
 
 
-        return carry, (action_defender, action_attacker, next_state, nn_state,reward, done) #only carrying the attacker reward
+        return carry, (action_defender, action_attacker, next_state, nn_state,reward, is_terminal) #only carrying the attacker reward
     
     def calculate_discounted_returns(rewards, discount_factor, mask):
         # Step 1: Reverse rewards and mask
@@ -493,61 +561,6 @@ import jax
 import jax.numpy as jnp
 import itertools
 
-def get_q_matrix(rng_input, state, nn_state, params_defender, params_attacker, steps_in_episode):
-
-    env = ENV
-
-    def apply_actions(state, actions, rng_input):
-        action_defender, action_attacker = actions
-        next_state, nn_state, _, _ = env.step(state, action_defender, 'defender')
-        init_state, init_nn_state, reward, _ = env.step(next_state, action_attacker, 'attacker')
-        return init_state, init_nn_state, reward
-    
-
-
-    defender_actions = jnp.array([0,1,2])
-    attacker_actions = jnp.array([0,1,2])
-    action_pairs = jnp.array(list(itertools.product(defender_actions, attacker_actions)))
-
-    # Vectorize the apply_actions function to handle all action pairs in parallel
-    batch_apply_actions = jax.vmap(apply_actions, in_axes=(None, 0, None))
-
-    # Apply all action pairs to the initial state
-    init_states, init_nn_states, rewards = batch_apply_actions(state, action_pairs, rng_input)
-    rewards = jnp.array(rewards).reshape(len(defender_actions), len(attacker_actions))
-    #print('init_nn_states q', init_nn_states)
-    # Ensure your rollout function can handle batched inputs
-    # Vectorize the rollout function to handle all initial states from action pairs in parallel
-    batched_rollout = jax.vmap(rollout, in_axes=(None,0,0, None, None, None))
-
-    # Perform batched rollouts
-    _, _, states, _, returns, _, rewards_traj = batched_rollout(rng_input, init_states, init_nn_states, params_defender, params_attacker,STEPS_IN_EPISODE-1)
-
-
-    #get the first return for each action pair
-    returns = jnp.array([r[0] for r in returns])
-
-
-    # Reshape Q-values into a matrix
-    #row player is defener, 
-    q_matrix = returns.reshape(len(defender_actions), len(attacker_actions))
-    q_matrix = rewards +  .99*q_matrix
-
-
-    return q_matrix
-
-def solve_nash(q_matrix, v):
-
-    g = Game(q_matrix)
-    eqs = list(g.support_enumeration())
-    if len(eqs) > 0:
-        payoff =  jnp.array(g[eqs[0]][0])
-    else:
-        payoff =  jnp.mean(q_matrix)
-
-    error = payoff - v
-
-    return jnp.abs(error)
 
 
 
@@ -584,28 +597,28 @@ if is_train:
     plt.close()
 
 
-    # plt.plot(metrics[:,1])
-    # plt.savefig('gifs/jax/attacker_norm_vmap.png')
-    # plt.close()
+    plt.plot(metrics[:,1])
+    plt.savefig('gifs/jax/attacker_norm_vmap.png')
+    plt.close()
 
-    # plt.plot(metrics[:,2])
-    # plt.savefig('gifs/jax/defender_norm_vmap.png')
-    # plt.close()
+    plt.plot(metrics[:,2])
+    plt.savefig('gifs/jax/defender_norm_vmap.png')
+    plt.close()
 
-    # plt.plot(metrics[:,3])
-    # plt.savefig('gifs/jax/val_loss_vmap.png')
-    # plt.close()
+    plt.plot(metrics[:,3])
+    plt.savefig('gifs/jax/val_loss_vmap.png')
+    plt.close()
 
     save_params(params_defender, params_attacker, params_value)
     # rng_input = jax.random.PRNGKey(1125)
 
-    # #calculate bellman error
+    #calculate bellman error
     
     
-    # bellman_error = [solve_nash(q,v) for q,v in zip(q_values, v_values)]
-    # plt.plot(bellman_error)
-    # plt.savefig('gifs/jax/bellman_error_vmap.png')
-    # plt.close()
+    bellman_error = [solve_nash(q,v) for q,v in zip(q_values, v_values)]
+    plt.plot(bellman_error)
+    plt.savefig('gifs/jax/bellman_error_vmap.png')
+    plt.close()
         
 
 else:
@@ -613,7 +626,7 @@ else:
         params_defender = pickle.load(handle)
     with open('data/jax_nash/jax_nash_attacker.pickle', 'rb') as handle:
         params_attacker = pickle.load(handle)
-    rng_input = jax.random.PRNGKey(999)
+    rng_input = jax.random.PRNGKey(91399)
     policy_net = hk.without_apply_rng(hk.transform(policy_network))
     # params_defender = policy_net.init(rng_input, nn_state)
     # params_attacker = policy_net.init(rng_input, nn_state)
@@ -647,3 +660,7 @@ print(actions_attacker)
 print(dones)
 print(mask*returns)
 #rember to change seeds back
+
+q, v = get_q_and_v(rng_input, params_defender, params_attacker)
+print(q)
+print(v)
