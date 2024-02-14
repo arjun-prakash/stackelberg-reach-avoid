@@ -35,10 +35,19 @@ from nashpy import Game
 
 # config.update('jax_enable_x64', True)
 
+def breakpoint_if_contains_false(x):
+  has_false = jnp.any(jnp.logical_not(x))
+  def true_fn(x):
+    jax.debug.breakpoint()
+
+  def false_fn(x):
+    pass
+  jax.lax.cond(has_false, true_fn, false_fn, x)
+
 STEPS_IN_EPISODE = 50
 BATCH_SIZE = 32
-NUM_INNER_ITERS = 4
-NUM_ITERS = int(10000/NUM_INNER_ITERS)
+NUM_INNER_ITERS = 3
+NUM_ITERS = int(20000/NUM_INNER_ITERS)
 is_train = True
 
 ENV = TwoPlayerDubinsCarEnv(
@@ -67,7 +76,7 @@ def get_q_and_v(rng_input, params_defender, params_attacker):
     obs, state, nn_state = ENV.reset(rng_input)
     batched_get_q_matrix = jax.vmap(get_q_matrix, in_axes=(0, None, None, None, None, None))
     batched_rollout = jax.vmap(rollout, in_axes=(0,None,None, None, None, None), out_axes=0)
-    keys = jax.random.split(rng_input, num=BATCH_SIZE)
+    keys = jax.random.split(rng_input, num=BATCH_SIZE*2)
     q_matricies = batched_get_q_matrix(keys, state, nn_state, params_defender, params_attacker, STEPS_IN_EPISODE)
     rollouts = batched_rollout(keys, state, nn_state, params_defender, params_attacker, STEPS_IN_EPISODE-1)
 
@@ -98,7 +107,15 @@ def select_action(params, policy_net,  nn_state, mask, key):
     probs = policy_net.apply(params, nn_state, mask)
     return jax.random.choice(key, a=3, p=probs)
 
-
+def get_closer(state, player):
+    dists = []
+    for action in range(ENV.num_actions):
+        next_state, _, _, info = ENV.step(state, action,player)
+        #get distance between players
+        dist = np.linalg.norm(next_state['attacker'][:2] - next_state['defender'][:2])
+        dists.append(dist)
+    a = np.argmin(dists)
+    return a
 
 
 
@@ -115,7 +132,10 @@ def rollout(rng_input, init_state, init_nn_state, params_defender, params_attack
     :return: Observations, actions, rewards, next observations, and dones from the rollout.
     """
     # Reset the environment
-
+    def check_done(prev_done, next_done):
+        "delay done by one step to get bonus"
+        result = jnp.logical_or(prev_done, jnp.logical_and(prev_done, next_done))
+        return result
 
 
     def policy_step(state_input, _):
@@ -124,20 +144,29 @@ def rollout(rng_input, init_state, init_nn_state, params_defender, params_attack
         rng, rng_step = jax.random.split(rng)
         defender_mask = jnp.array([1,1,1])
         action_defender = select_action(params_defender, policy_net, nn_state, defender_mask, rng_step)
-        next_state, _, reward, cur_done = env.step(state, action_defender, 'defender')
-        attacker_mask = ENV.get_legal_actions_mask2(next_state)
+        #action_defender = get_closer(state, 'defender')
+        cur_state, cur_nn_state, reward, cur_done = env.step_stack(state, action_defender, 'defender')
+        attacker_mask = ENV.get_legal_actions_mask2(cur_state)
+        #jax.debug.print(f'mask: {attacker_mask}')
+        #breakpoint_if_contains_false(attacker_mask)
         #check if there are no legal actions left, done is true
-        done = jax.lax.cond(jnp.all(attacker_mask == 0), lambda x: True, lambda x: False, None)
-        action_attacker = select_action(params_attacker, policy_net, nn_state, attacker_mask, rng_step)
-
-        next_state, next_nn_state, reward, next_done = env.step(next_state, action_attacker, 'attacker')
+        no_moves_done = jax.lax.cond(jnp.all(attacker_mask == 0), lambda x: True, lambda x: False, None)
+        action_attacker = select_action(params_attacker, policy_net, cur_nn_state, attacker_mask, rng_step)
+        next_state, next_nn_state, reward, next_done = env.step_stack(cur_state, action_attacker, 'attacker')
         
-        next_done = jnp.logical_or(cur_done, next_done)
+        next_done = jnp.logical_or(no_moves_done, next_done)
+        next_done = jnp.logical_or(False, next_done)
         done = jnp.logical_or(prev_done, next_done)
+
+        is_terminal = check_done(prev_done, next_done)
+
+
+
+
         carry = (next_state,next_nn_state, done, rng_step)
 
 
-        return carry, (action_defender, action_attacker, next_state, nn_state,reward, done, attacker_mask) #only carrying the attacker reward
+        return carry, (action_defender, action_attacker, next_state, nn_state,reward, is_terminal, attacker_mask) #only carrying the attacker reward
     
     def calculate_discounted_returns(rewards, discount_factor, mask):
         # Step 1: Reverse rewards and mask
@@ -268,7 +297,6 @@ def policy_network(observation, legal_moves):
 
         logits = net(observation)
         masked_logits = jnp.where(legal_moves, logits, 1e-8)
-
         return masked_logits
 
 def value_network(observation):
@@ -296,7 +324,7 @@ def train():
         params, value_params, observations, actions, returns, padding_mask, action_mask
     ):
 
-        action_mask = jnp.array([1,1,1])
+        #action_mask = jnp.array([1,1,1])
 
         action_probabilities = policy_net.apply(params, observations, action_mask)
         #action_probabilities = jax.nn.softmax(action_probabilities)
@@ -420,7 +448,7 @@ def train():
 
         batched_rollout = jax.vmap(rollout, in_axes=(0,0,0, None, None, None), out_axes=0)
 
-        keys = jax.random.split(rng_input, num=BATCH_SIZE)
+        keys = jax.random.split(subkey, num=BATCH_SIZE)
         init_obs, initial_states, initial_nn_states = batched_env_reset(keys)
 
         all_actions_defender, all_actions_attacker, all_states, all_nn_states, all_returns, all_dones, all_rewards, all_attaker_masks = batched_rollout(keys,  initial_states, initial_nn_states, params_defender, params_attacker, STEPS_IN_EPISODE)
@@ -492,9 +520,9 @@ def train():
     params_value = value_net.init(rng_input, nn_state)
 
     # Initialize Haiku optimizer
-    optimizer_defender = optax.radam(1e-5, b1=0.9, b2=0.9)
-    optimizer_attacker = optax.radam(1e-5, b1=0.9, b2=0.9)
-    value_optimizer = optax.radam(1e-5, b1=0.9, b2=0.9)
+    optimizer_defender = optax.radam(1e-4, b1=0.9, b2=0.9)
+    optimizer_attacker = optax.radam(1e-4, b1=0.9, b2=0.9)
+    value_optimizer = optax.radam(1e-4, b1=0.9, b2=0.9)
 
     # Initialize optimizer state
     opt_state_attacker = optimizer_attacker.init(params_attacker)
@@ -643,7 +671,7 @@ if is_train:
         
 
 else:
-    rng_input = jax.random.PRNGKey(1125)
+    rng_input = jax.random.PRNGKey(999991)
     #actions_defender, actions_attacker, states,rewards, dones = rollout(rng_input, steps_in_episode)
 
 
@@ -651,7 +679,8 @@ else:
         params_defender = pickle.load(handle)
     with open('data/jax_stack/jax_stack_attacker.pickle', 'rb') as handle:
         params_attacker = pickle.load(handle)
-    rng_input = jax.random.PRNGKey(6667)
+    #rng_input = jax.random.PRNGKey(69679898967)
+    rng_input = jax.random.PRNGKey(1125)
     policy_net = hk.without_apply_rng(hk.transform(policy_network))
     # params_defender = policy_net.init(rng_input, nn_state, jnp.array([1,1,1]))
     # params_attacker = policy_net.init(rng_input, nn_state, jnp.array([1,1,1]))
@@ -677,7 +706,9 @@ obs, state, nn_state = env.reset(rng_input)
 
 
 actions_defender, actions_attacker, states, nn_states, returns, dones, rewards, masks = rollout(rng_input, state, nn_state, params_defender, params_attacker,STEPS_IN_EPISODE)
-
+mask = jnp.logical_not(dones)
+#set mask to all 1
+#dones = jnp.zeros_like(dones)
 
 
 # print(states)
@@ -691,4 +722,6 @@ env.render(states, dones)
 env.make_gif('gifs/jax/test_stack.gif')
 print(actions_defender)
 print(actions_attacker)
+print(dones)
+print(mask*returns)
 #rember to change seeds back
