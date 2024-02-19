@@ -14,6 +14,7 @@ import haiku as hk
 import imageio
 import jax
 import jax.numpy as jnp
+import pandas as pd
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -31,14 +32,14 @@ from jax_tqdm import scan_tqdm, loop_tqdm
 from jax import config
 from nashpy import Game
 #config.update('jax_platform_name', 'gpu')
-# config.update('jax_disable_jit', True)
+#config.update('jax_disable_jit', True)
 
 # config.update('jax_enable_x64', True)
 
 STEPS_IN_EPISODE = 50
 BATCH_SIZE = 32
-NUM_ITERS = 50000
-is_train = False
+NUM_ITERS = 6000
+is_train = True
 
 
 ENV = TwoPlayerDubinsCarEnv(
@@ -65,8 +66,8 @@ def get_q_matrix(rng_input, state, nn_state, params_defender, params_attacker, s
 
     def apply_actions(state, actions, rng_input):
         action_defender, action_attacker = actions
-        next_state, nn_state, _, _ = env.step(state, action_defender, 'defender')
-        init_state, init_nn_state, reward, _ = env.step(next_state, action_attacker, 'attacker')
+        next_state, nn_state, _, _ = env.step_nash(state, action_defender, 'defender')
+        init_state, init_nn_state, reward, _ = env.step_nash(next_state, action_attacker, 'attacker')
         return init_state, init_nn_state, reward
     
 
@@ -102,9 +103,53 @@ def get_q_matrix(rng_input, state, nn_state, params_defender, params_attacker, s
 
     return q_matrix
 
+
+def get_q_matrix_value_net(rng_input, state, nn_state, params_defender, params_attacker, params_value, steps_in_episode):
+
+    env = ENV
+
+    def apply_actions(state, actions, rng_input):
+        action_defender, action_attacker = actions
+        next_state, nn_state, _, _ = env.step_nash(state, action_defender, 'defender')
+        init_state, init_nn_state, reward, _ = env.step_nash(next_state, action_attacker, 'attacker')
+        return init_state, init_nn_state, reward
+    
+
+
+    defender_actions = jnp.array([0,1,2])
+    attacker_actions = jnp.array([0,1,2])
+    action_pairs = jnp.array(list(itertools.product(defender_actions, attacker_actions)))
+
+    # Vectorize the apply_actions function to handle all action pairs in parallel
+    batch_apply_actions = jax.vmap(apply_actions, in_axes=(None, 0, None))
+
+    # Apply all action pairs to the initial state
+    init_states, init_nn_states, rewards = batch_apply_actions(state, action_pairs, rng_input)
+    rewards = jnp.array(rewards).reshape(len(defender_actions), len(attacker_actions))
+    #print('init_nn_states q', init_nn_states)
+    # Ensure your rollout function can handle batched inputs
+    # Vectorize the rollout function to handle all initial states from action pairs in parallel
+    batched_value_estimate = jax.vmap(value_network.apply, in_axes=(None, 0))
+
+    # Perform batched rollouts
+    _, _, states, _, returns, _, rewards_traj = batched_rollout(rng_input, init_states, init_nn_states, params_defender, params_attacker,STEPS_IN_EPISODE-1)
+
+
+    #get the first return for each action pair
+    returns = jnp.array([r[0] for r in returns])
+
+
+    # Reshape Q-values into a matrix
+    #row player is defener, 
+    q_matrix = returns.reshape(len(defender_actions), len(attacker_actions))
+    q_matrix = rewards +  .99*q_matrix
+
+
+    return q_matrix
+
 def solve_nash(q_matrix, v):
 
-    g = Game(q_matrix)
+    g = Game(q_matrix.T)
     eqs = list(g.support_enumeration())
     if len(eqs) > 0:
         payoff =  jnp.array(g[eqs[0]][0])
@@ -112,8 +157,9 @@ def solve_nash(q_matrix, v):
         payoff =  jnp.nan
 
     error = payoff - v
+    #print('payoff', payoff)
 
-    return jnp.abs(error)
+    return abs(error[0])
 
 
 @jax.jit
@@ -187,10 +233,10 @@ def rollout(rng_input, init_state, init_nn_state, params_defender, params_attack
         #rng_step = rng
         #action_defender = random_policy(rng_step)
         action_defender = select_action(params_defender, policy_net, nn_state, rng_step)
-        next_state, _, reward, cur_done = env.step(state, action_defender, 'defender')
+        next_state, _, reward, cur_done = env.step_nash(state, action_defender, 'defender')
         #action_attacker = random_policy(rng_step)
         action_attacker =select_action(params_attacker, policy_net, nn_state, rng_step)
-        next_state, next_nn_state, reward, next_done = env.step(next_state, action_attacker, 'attacker')
+        next_state, next_nn_state, reward, next_done = env.step_nash(next_state, action_attacker, 'attacker')
         next_done = jnp.logical_or(cur_done, next_done)
         done = jnp.logical_or(prev_done, next_done)
         is_terminal = check_done(prev_done, next_done)
@@ -267,22 +313,14 @@ def rollout(rng_input, init_state, init_nn_state, params_defender, params_attack
 
 
 
-
-def save_params(defender_params, attacker_params, value_params):
-        with open(
-            f"data/jax_nash/jax_nash_defender.pickle", "wb"
-        ) as handle:
-            pickle.dump(defender_params, handle, protocol=pickle.HIGHEST_PROTOCOL)
-        with open(
-            f"data/jax_nash/jax_nash_attacker.pickle", "wb"
-        ) as handle:
-            pickle.dump(attacker_params, handle, protocol=pickle.HIGHEST_PROTOCOL)
-        with open(
-            f"data/jax_nash/jax_nash_value.pickle", "wb"
-        ) as handle:
-            pickle.dump(value_params, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-
+def save_params(defender_params, attacker_params, value_params, folder):
+    with open(folder+'/jax_nash_defender.pickle', 'wb') as handle:
+        pickle.dump(defender_params, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    with open(folder+'/jax_nash_attacker.pickle', 'wb') as handle:
+        pickle.dump(attacker_params, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    with open(folder+'/jax_nash_value.pickle', 'wb') as handle:
+        pickle.dump(value_params, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    print('params saved')
 
 
 def load_config(file_path):
@@ -526,9 +564,9 @@ def train():
     params_value = value_net.init(rng_input, nn_state)
 
     # Initialize Haiku optimizer
-    optimizer_defender = optax.radam(1e-5, b1=0.9, b2=0.9)
-    optimizer_attacker = optax.radam(1e-5, b1=0.9, b2=0.9)
-    value_optimizer = optax.radam(1e-5, b1=0.9, b2=0.9)
+    optimizer_defender = optax.radam(1e-4, b1=0.9, b2=0.9)
+    optimizer_attacker = optax.radam(1e-4, b1=0.9, b2=0.9)
+    value_optimizer = optax.radam(1e-4, b1=0.9, b2=0.9)
 
     # Initialize optimizer state
     opt_state_attacker = optimizer_attacker.init(params_attacker)
@@ -571,6 +609,12 @@ config = load_config("configs/config.yml")
     
 game_type = config['game']['type']
 timestamp = str(datetime.datetime.now())
+folder = 'data/jax_nash/'+timestamp
+#make folder
+import os
+if not os.path.exists(folder):
+    os.makedirs(folder)
+
 
 
 
@@ -593,23 +637,27 @@ if is_train:
 
     print(metrics)
     plt.plot(metrics[:,0])
-    plt.savefig('gifs/jax/loss_vmap_test.png')
+    plt.savefig(folder+'/returns.png')
     plt.close()
 
 
     plt.plot(metrics[:,1])
-    plt.savefig('gifs/jax/attacker_norm_vmap.png')
+    plt.savefig(folder+'/attacker_norm.png')
     plt.close()
 
     plt.plot(metrics[:,2])
-    plt.savefig('gifs/jax/defender_norm_vmap.png')
+    plt.savefig(folder+'/defender_norm.png')
     plt.close()
 
     plt.plot(metrics[:,3])
-    plt.savefig('gifs/jax/val_loss_vmap.png')
+    plt.savefig(folder+'/value_loss.png')
     plt.close()
 
-    save_params(params_defender, params_attacker, params_value)
+    df = pd.DataFrame(metrics)
+    df.columns = ['returns', 'attacker_norm', 'defender_norm', 'value_loss']
+
+    save_params(params_defender, params_attacker, params_value, folder)
+
     # rng_input = jax.random.PRNGKey(1125)
 
     #calculate bellman error
@@ -617,8 +665,11 @@ if is_train:
     
     bellman_error = [solve_nash(q,v) for q,v in zip(q_values, v_values)]
     plt.plot(bellman_error)
-    plt.savefig('gifs/jax/bellman_error_vmap.png')
+    plt.savefig(folder+'/bellman_error.png')
     plt.close()
+    df['bellman_error'] = bellman_error
+    df.to_csv(folder+'/all_metrics.csv')
+
         
 
 else:
@@ -626,10 +677,12 @@ else:
         params_defender = pickle.load(handle)
     with open('data/jax_nash/jax_nash_attacker.pickle', 'rb') as handle:
         params_attacker = pickle.load(handle)
+
+    with open('data/jax_nash/jax_nash_value.pickle', 'rb') as handle:
+        params_value = pickle.load(handle)
     rng_input = jax.random.PRNGKey(91399)
     policy_net = hk.without_apply_rng(hk.transform(policy_network))
-    # params_defender = policy_net.init(rng_input, nn_state)
-    # params_attacker = policy_net.init(rng_input, nn_state)
+
 
 
 
@@ -639,12 +692,10 @@ else:
 policy_net = hk.without_apply_rng(hk.transform(policy_network))
 value_net = hk.without_apply_rng(hk.transform(value_network))
 
-obs, state, nn_state = env.reset(rng_input)
+obs, state, init_nn_state = env.reset(rng_input)
 
-actions_defender, actions_attacker, states, nn_states, returns, dones, rewards = rollout(rng_input, state, nn_state, params_defender, params_attacker,STEPS_IN_EPISODE)
-q_matrix = get_q_matrix(rng_input, state, nn_state, params_defender, params_attacker, STEPS_IN_EPISODE)
+actions_defender, actions_attacker, states, nn_states, returns, dones, rewards = rollout(rng_input, state, init_nn_state, params_defender, params_attacker,STEPS_IN_EPISODE)
 mask = jnp.logical_not(dones)
-
 
 # print(states)
 
@@ -654,13 +705,21 @@ mask = jnp.logical_not(dones)
 print('rendering')
 states = convert_state_to_list(states)
 env.render(states, dones)
-env.make_gif('gifs/jax/test_tmp.gif')
-print(actions_defender)
-print(actions_attacker)
-print(dones)
-print(mask*returns)
-#rember to change seeds back
+env.make_gif(folder+'/rollout.gif')
+# print(actions_defender)
+# print(actions_attacker)
+# print(dones)
+# print(mask*returns)
+# #rember to change seed
+# # s back
+# value_rollout = returns[0]
+# q_matrix = get_q_matrix(rng_input, state, init_nn_state, params_defender, params_attacker, STEPS_IN_EPISODE)
+# print(q_matrix)
+# print('value_rollout', value_rollout)
 
-q, v = get_q_and_v(rng_input, params_defender, params_attacker)
-print(q)
-print(v)
+# value = value_net.apply(params_value, init_nn_state)
+# print('value network', value)
+
+# print('bellman error', solve_nash(q_matrix, value_rollout))
+# print('bellman errorvalue network', solve_nash(q_matrix, value))
+# #rember to change seeds back

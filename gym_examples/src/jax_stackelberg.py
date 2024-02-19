@@ -14,6 +14,7 @@ import haiku as hk
 import imageio
 import jax
 import jax.numpy as jnp
+import cvxpy as cp
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -33,7 +34,8 @@ from nashpy import Game
 #config.update('jax_platform_name', 'gpu')
 #config.update('jax_disable_jit', True)
 
-# config.update('jax_enable_x64', True)
+#config.update('jax_enable_x64', True)
+import pandas as pd
 
 def breakpoint_if_contains_false(x):
   has_false = jnp.any(jnp.logical_not(x))
@@ -67,6 +69,7 @@ ENV = TwoPlayerDubinsCarEnv(
     )   
 
 
+
 @jax.jit
 def get_q_and_v(rng_input, params_defender, params_attacker):
 
@@ -85,6 +88,160 @@ def get_q_and_v(rng_input, params_defender, params_attacker):
 
     return q_matrix, returns
 
+@jax.jit
+def get_q_and_v2(rng_input, params_defender, params_attacker, params_value):
+
+
+ 
+
+    obs, state, nn_state = ENV.reset(rng_input)
+    batched_get_q_matrix = jax.vmap(get_q_matrix2, in_axes=(0, None, None, None, None, None))
+    batched_rollout = jax.vmap(rollout, in_axes=(0,None,None, None, None, None), out_axes=0)
+    keys = jax.random.split(rng_input, num=BATCH_SIZE*2)
+    q_matricies = batched_get_q_matrix(keys, state, nn_state, params_defender, params_attacker, params_value)
+    rollouts = batched_rollout(keys, state, nn_state, params_defender, params_attacker, STEPS_IN_EPISODE-1)
+
+    q_matrix = jnp.mean(q_matricies, axis=0)
+    returns = jnp.mean(jnp.array([r[0] for r in rollouts[4]]))
+
+    return q_matrix, returns
+
+
+
+
+def get_q_matrix(rng_input, state, nn_state, params_defender, params_attacker, steps_in_episode):
+
+    env = ENV
+
+    def apply_actions(state, actions, rng_input):
+        action_defender, action_attacker = actions
+        next_state, nn_state, _, _ = env.step_stack(state, action_defender, 'defender')
+        init_state, init_nn_state, reward, _ = env.step_stack(next_state, action_attacker, 'attacker')
+        return init_state, init_nn_state, reward
+    
+
+
+    defender_actions = jnp.array([0,1,2])
+    attacker_actions = jnp.array([0,1,2])
+    action_pairs = jnp.array(list(itertools.product(defender_actions, attacker_actions)))
+
+    # Vectorize the apply_actions function to handle all action pairs in parallel
+    batch_apply_actions = jax.vmap(apply_actions, in_axes=(None, 0, None))
+
+    # Apply all action pairs to the initial state
+    init_states, init_nn_states, rewards = batch_apply_actions(state, action_pairs, rng_input)
+    rewards = jnp.array(rewards).reshape(len(defender_actions), len(attacker_actions))
+    #print('init_nn_states q', init_nn_states)
+    # Ensure your rollout function can handle batched inputs
+    # Vectorize the rollout function to handle all initial states from action pairs in parallel
+    batched_rollout = jax.vmap(rollout, in_axes=(None,0,0, None, None, None))
+
+    # Perform batched rollouts
+    _, _, states, _, returns, _, rewards_traj, _ = batched_rollout(rng_input, init_states, init_nn_states, params_defender, params_attacker,STEPS_IN_EPISODE-1)
+
+
+    #get the first return for each action pair
+    returns = jnp.array([r[0] for r in returns])
+
+
+    # Reshape Q-values into a matrix
+    #row player is defener, 
+    q_matrix = returns.reshape(len(defender_actions), len(attacker_actions))
+    q_matrix = rewards +  .99*q_matrix
+
+
+    return q_matrix
+
+
+def get_q_matrix2(rng_input, state, nn_state, params_defender, params_attacker, params_value):
+
+    env = ENV
+    value_net = hk.without_apply_rng(hk.transform(value_network))
+
+
+    def apply_actions(state, actions, rng_input):
+        action_defender, action_attacker = actions
+        next_state, nn_state, _, _ = env.step_stack(state, action_defender, 'defender')
+        init_state, init_nn_state, reward, _ = env.step_stack(next_state, action_attacker, 'attacker')
+        return init_state, init_nn_state, reward
+    
+
+
+    defender_actions = jnp.array([0,1,2])
+    attacker_actions = jnp.array([0,1,2])
+    action_pairs = jnp.array(list(itertools.product(defender_actions, attacker_actions)))
+
+    # Vectorize the apply_actions function to handle all action pairs in parallel
+    batch_apply_actions = jax.vmap(apply_actions, in_axes=(None, 0, None))
+
+    # Apply all action pairs to the initial state
+    init_states, init_nn_states, rewards = batch_apply_actions(state, action_pairs, rng_input)
+    rewards = jnp.array(rewards).reshape(len(defender_actions), len(attacker_actions))
+    #print('init_nn_states q', init_nn_states)
+    # Ensure your rollout function can handle batched inputs
+    # Vectorize the rollout function to handle all initial states from action pairs in parallel
+    batched_value = jax.vmap(value_net.apply, in_axes=(None, 0))
+
+    # Perform batched rollouts
+    values = batched_value(params_value, init_nn_states)
+
+
+    #get the first return for each action pair
+    
+
+
+    # Reshape Q-values into a matrix
+    #row player is defener, 
+    values = values.reshape(len(defender_actions), len(attacker_actions))
+    q_matrix = rewards +  .99*values
+
+
+    return q_matrix
+
+def solve_nash(q_matrix, v):
+
+    g = Game(q_matrix.T)
+    eqs = list(g.support_enumeration())
+    if len(eqs) > 0:
+        payoff =  jnp.array(g[eqs[0]][0])
+    else:
+        payoff =  jnp.mean(q_matrix)
+
+    #print('payoff', payoff)
+    error = payoff - v
+
+    return jnp.abs(error)
+
+def solve_stackelberg(q_matrix, v):
+    # Convert q_values_data to matrix
+
+    # Variables
+    q = cp.Variable(q_matrix.shape[1], nonneg=True)  # Defender's strategy
+    z = cp.Variable()  # Worst-case expected payoff for defender
+
+    # Objective: Minimize z (worst-case expected payoff for defender)
+    objective = cp.Minimize(z)
+
+    # Constraints
+    constraints = [
+        cp.sum(q) == 1,  # Defender's strategy should be a valid probability distribution
+        z >= np.min(q_matrix)  # z should be greater than or equal to the minimum Q-value
+    ]
+    
+    # Expected payoff for each attacker action should be at least z
+    for i in range(3):
+        constraints.append(q_matrix[i] @ q <= z)
+
+    # Form and solve the problem
+    prob = cp.Problem(objective, constraints)
+    prob.solve()
+    #print('payoff', prob.value)
+
+    bellman_error = abs(prob.value - v)
+
+
+
+    return bellman_error[0]
 
 
 
@@ -110,7 +267,7 @@ def select_action(params, policy_net,  nn_state, mask, key):
 def get_closer(state, player):
     dists = []
     for action in range(ENV.num_actions):
-        next_state, _, _, info = ENV.step(state, action,player)
+        next_state, _, _, info = ENV.step_stack(state, action,player)
         #get distance between players
         dist = np.linalg.norm(next_state['attacker'][:2] - next_state['defender'][:2])
         dists.append(dist)
@@ -233,21 +390,15 @@ def rollout(rng_input, init_state, init_nn_state, params_defender, params_attack
 
 
 
-def save_params(defender_params, attacker_params, value_params):
-        with open(
-            f"data/jax_stack/jax_stack_defender.pickle", "wb"
-        ) as handle:
-            pickle.dump(defender_params, handle, protocol=pickle.HIGHEST_PROTOCOL)
-        with open(
-            f"data/jax_stack/jax_stack_attacker.pickle", "wb"
-        ) as handle:
-            pickle.dump(attacker_params, handle, protocol=pickle.HIGHEST_PROTOCOL)
-        with open(
-            f"data/jax_stack/jax_stack_value.pickle", "wb"
-        ) as handle:
-            pickle.dump(value_params, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-
+def save_params(defender_params, attacker_params, value_params, folder):
+    with open(folder+'/jax_stack_defender.pickle', 'wb') as handle:
+        pickle.dump(defender_params, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    with open(folder+'/jax_stack_attacker.pickle', 'wb') as handle:
+        pickle.dump(attacker_params, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    with open(folder+'/jax_stack_value.pickle', 'wb') as handle:
+        pickle.dump(value_params, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    print('params saved')
+           
 
 
 def load_config(file_path):
@@ -555,62 +706,6 @@ import jax
 import jax.numpy as jnp
 import itertools
 
-def get_q_matrix(rng_input, state, nn_state, params_defender, params_attacker, steps_in_episode):
-
-    env = ENV
-
-    def apply_actions(state, actions, rng_input):
-        action_defender, action_attacker = actions
-        next_state, nn_state, _, _ = env.step(state, action_defender, 'defender')
-        init_state, init_nn_state, reward, _ = env.step(next_state, action_attacker, 'attacker')
-        return init_state, init_nn_state, reward
-    
-
-
-    defender_actions = jnp.array([0,1,2])
-    attacker_actions = jnp.array([0,1,2])
-    action_pairs = jnp.array(list(itertools.product(defender_actions, attacker_actions)))
-
-    # Vectorize the apply_actions function to handle all action pairs in parallel
-    batch_apply_actions = jax.vmap(apply_actions, in_axes=(None, 0, None))
-
-    # Apply all action pairs to the initial state
-    init_states, init_nn_states, rewards = batch_apply_actions(state, action_pairs, rng_input)
-    rewards = jnp.array(rewards).reshape(len(defender_actions), len(attacker_actions))
-    #print('init_nn_states q', init_nn_states)
-    # Ensure your rollout function can handle batched inputs
-    # Vectorize the rollout function to handle all initial states from action pairs in parallel
-    batched_rollout = jax.vmap(rollout, in_axes=(None,0,0, None, None, None))
-
-    # Perform batched rollouts
-    _, _, states, _, returns, _, rewards_traj, _ = batched_rollout(rng_input, init_states, init_nn_states, params_defender, params_attacker,STEPS_IN_EPISODE-1)
-
-
-    #get the first return for each action pair
-    returns = jnp.array([r[0] for r in returns])
-
-
-    # Reshape Q-values into a matrix
-    #row player is defener, 
-    q_matrix = returns.reshape(len(defender_actions), len(attacker_actions))
-    q_matrix = rewards +  .99*q_matrix
-
-
-    return q_matrix
-
-def solve_nash(q_matrix, v):
-
-    g = Game(q_matrix)
-    eqs = list(g.support_enumeration())
-    if len(eqs) > 0:
-        payoff =  jnp.array(g[eqs[0]][0])
-    else:
-        payoff =  jnp.mean(q_matrix)
-
-    error = payoff - v
-
-    return jnp.abs(error)
-
 
 
 
@@ -620,6 +715,13 @@ config = load_config("configs/config.yml")
     
 game_type = config['game']['type']
 timestamp = str(datetime.datetime.now())
+folder = 'data/jax_stack/'+timestamp
+#make folder
+import os
+if not os.path.exists(folder):
+    os.makedirs(folder)
+
+
 
 
 
@@ -642,7 +744,7 @@ if is_train:
 
     print(metrics)
     plt.plot(metrics[:,0])
-    plt.savefig('gifs/jax/loss_vmap_stack.png')
+    plt.savefig(folder+'/average_return.png')
     plt.close()
 
 
@@ -651,27 +753,33 @@ if is_train:
     # plt.close()
 
     plt.plot(metrics[:,1])
-    plt.savefig('gifs/jax/defender_norm_vmap_stack.png')
+    plt.savefig(folder+'/defender_norm.png')
     plt.close()
 
     plt.plot(metrics[:,2])
-    plt.savefig('gifs/jax/val_loss_vmap_stack.png')
+    plt.savefig(folder+'/value_loss.png')
     plt.close()
 
-    save_params(params_defender, params_attacker, params_value)
+    save_params(params_defender, params_attacker, params_value, folder)
     rng_input = jax.random.PRNGKey(1125)
+    df = pd.DataFrame(metrics)
+    df.columns = ['average_return', 'defender_norm', 'value_loss']
 
     #calculate bellman error
     
     
-    bellman_error = [solve_nash(q,v) for q,v in zip(q_values, v_values)]
+    bellman_error = [solve_stackelberg(q.T,v) for q,v in zip(q_values, v_values)]
     plt.plot(bellman_error)
-    plt.savefig('gifs/jax/bellman_error_vmap_stack.png')
+    plt.savefig(folder+'/bellman_error.png')
     plt.close()
+    df['bellman_error'] = bellman_error
+    df.to_csv(folder+'/all_metrics.csv')
+
+
+    
         
 
 else:
-    rng_input = jax.random.PRNGKey(999991)
     #actions_defender, actions_attacker, states,rewards, dones = rollout(rng_input, steps_in_episode)
 
 
@@ -679,8 +787,10 @@ else:
         params_defender = pickle.load(handle)
     with open('data/jax_stack/jax_stack_attacker.pickle', 'rb') as handle:
         params_attacker = pickle.load(handle)
+    with open('data/jax_stack/jax_stack_value.pickle', 'rb') as handle:
+        params_value = pickle.load(handle)
     #rng_input = jax.random.PRNGKey(69679898967)
-    rng_input = jax.random.PRNGKey(1125)
+    rng_input = jax.random.PRNGKey(1144258)
     policy_net = hk.without_apply_rng(hk.transform(policy_network))
     # params_defender = policy_net.init(rng_input, nn_state, jnp.array([1,1,1]))
     # params_attacker = policy_net.init(rng_input, nn_state, jnp.array([1,1,1]))
@@ -702,10 +812,10 @@ else:
 policy_net = hk.without_apply_rng(hk.transform(policy_network))
 value_net = hk.without_apply_rng(hk.transform(value_network))
 
-obs, state, nn_state = env.reset(rng_input)
+obs, state, init_nn_state = env.reset(rng_input)
 
 
-actions_defender, actions_attacker, states, nn_states, returns, dones, rewards, masks = rollout(rng_input, state, nn_state, params_defender, params_attacker,STEPS_IN_EPISODE)
+actions_defender, actions_attacker, states, nn_states, returns, dones, rewards, masks = rollout(rng_input, state, init_nn_state, params_defender, params_attacker,STEPS_IN_EPISODE)
 mask = jnp.logical_not(dones)
 #set mask to all 1
 #dones = jnp.zeros_like(dones)
@@ -719,9 +829,38 @@ mask = jnp.logical_not(dones)
 print('rendering')
 states = convert_state_to_list(states)
 env.render(states, dones)
-env.make_gif('gifs/jax/test_stack.gif')
-print(actions_defender)
-print(actions_attacker)
-print(dones)
-print(mask*returns)
-#rember to change seeds back
+env.make_gif(folder+'/rollout.gif')
+# print(actions_defender)
+# print(actions_attacker)
+# print(dones)
+# print(mask*returns)
+
+
+# value_rollout = returns[0]
+# q_matrix = get_q_matrix(rng_input, state, init_nn_state, params_defender, params_attacker, STEPS_IN_EPISODE)
+# print(q_matrix)
+# print('value_rollout', value_rollout)
+
+# value = value_net.apply(params_value, init_nn_state)
+# print(value)
+
+# print('bellman error', solve_nash(q_matrix, value_rollout))
+# print('bellman errorvalue network', solve_nash(q_matrix, value))
+
+
+# print('stackelberg rollout', solve_stackelberg(q_matrix.T, value_rollout))
+# print('stackelberg', solve_stackelberg(q_matrix.T, value))
+
+# q, v = get_q_and_v(rng_input, params_defender, params_attacker)
+# bellman_error = solve_stackelberg(q.T, v)
+# print('bellman error', bellman_error)
+# #rember to change seeds back
+# print('***********')
+
+# # q, v = get_q_and_v2(rng_input, params_defender, params_attacker, params_value)
+# # print(q)
+# # print(v)
+# # bellman_error = solve_stackelberg(q.T, v)
+
+
+# # print('bellman error2', bellman_error)
