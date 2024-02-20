@@ -111,7 +111,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         return new_state
 
     #this is real
-    def _get_reward_done(self, state, player):
+    def _get_reward_done_nash(self, state, player):
         # Calculate the distance of the attacker from the goal
         dist_goal = jnp.linalg.norm(state['attacker'][:2] - self.goal_position)
 
@@ -150,22 +150,22 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         return reward, done_win
 
-    # def _get_reward_done(self, state, player):
-    #     # persuit evasion
-    #     dist_capture = jnp.linalg.norm(state['attacker'][:2] - state['defender'][:2])
+    def _get_reward_done_pe(self, state, player):
+        # persuit evasion
+        dist_capture = jnp.linalg.norm(state['attacker'][:2] - state['defender'][:2])
 
-    #     # Check if the attacker has reached the goal
+        # Check if the attacker has reached the goal
 
-    #     # Check if the attacker is caught by the defender
-    #     done_loss = jnp.linalg.norm(state['attacker'][:2] - state['defender'][:2]) < self.capture_radius 
-
-
+        # Check if the attacker is caught by the defender
+        done = jnp.linalg.norm(state['attacker'][:2] - state['defender'][:2]) < self.capture_radius 
 
 
-    #     # Determine if the episode is done (either win or loss)
+
+
+        # Determine if the episode is done (either win or loss)
       
 
-    #     return dist_capture, done_loss
+        return dist_capture, done
 
 
     def _reset_if_done(self, key, env_state, done):
@@ -176,10 +176,10 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             None,
         )
     
-    def step(self, env_state, action, player):
+    def step_nash(self, env_state, action, player):
         state = env_state
         new_state = self._update_state(state, action, player)
-        reward, done = self._get_reward_done(new_state, player)
+        reward, done = self._get_reward_done_nash(new_state, player)
         #new_state = self._reset_if_done(key, new_state, done)
         nn_state = self.encode_helper(new_state)
         return new_state, nn_state, reward, done
@@ -188,6 +188,15 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         state = env_state
         new_state = self._update_state(state, action, player)
         reward, done = self._get_reward_done_stack(new_state, player)
+        #new_state = self._reset_if_done(key, new_state, done)
+        nn_state = self.encode_helper(new_state)
+        return new_state, nn_state, reward, done
+    
+    
+    def step_pe(self, env_state, action, player):
+        state = env_state
+        new_state = self._update_state(state, action, player)
+        reward, done = self._get_reward_done_pe(new_state, player)
         #new_state = self._reset_if_done(key, new_state, done)
         nn_state = self.encode_helper(new_state)
         return new_state, nn_state, reward, done
@@ -209,8 +218,8 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             # Define a helper function to check if the 'attacker' gets captured by the 'defender'
         def apply_actions(state, actions):
             action_defender, action_attacker = actions
-            next_state, nn_state, _, _ = self.step(state, action_attacker, 'attacker')
-            init_state, init_nn_state, reward, done = self.step(next_state, action_defender, 'defender')
+            next_state, nn_state, _, _ = self.step_nash(state, action_attacker, 'attacker') #use nash to check the legal actions
+            init_state, init_nn_state, reward, done = self.step_nash(next_state, action_defender, 'defender')
             #check reward is -200 and done is true
             is_legal = jax.lax.cond(
                 jnp.logical_and(reward == -200, done == True),
@@ -243,7 +252,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
     def get_legal_actions_mask1(self, state):
             # Define a helper function to check if the 'attacker' gets captured by the 'defender'
         def apply_actions(state, action):
-            next_state, nn_state, reward, done = self.step(state, action, 'attacker')
+            next_state, nn_state, reward, done = self.step_nash(state, action, 'attacker')
             #check reward is -200 and done is true
             is_legal = jax.lax.cond(
                 jnp.logical_and(reward == -200, done == True),

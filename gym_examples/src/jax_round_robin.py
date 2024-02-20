@@ -57,7 +57,7 @@ ENV = TwoPlayerDubinsCarEnv(
         max_steps=5,
         init_defender_position=[0,0,0],
         init_attacker_position=[2,2,0],
-        capture_radius=0.3,
+        capture_radius=0.25,
         goal_position=[0,-3],
         goal_radius=1,
         timestep=1,
@@ -152,9 +152,10 @@ def rollout(rng_input, init_state, init_nn_state, params_defender, params_attack
         rng, rng_step = jax.random.split(rng)
         defender_mask = jnp.array([1,1,1])
         #action_defender = select_action_stack(params_defender, policy_net_stack, nn_state, defender_mask, rng_step)
-        action_defender = get_closer2(state, 'defender')
+        action_defender =  get_closer2(state, 'defender')
         cur_state, cur_nn_state, reward, cur_done = env.step_stack(state, action_defender, 'defender')
-        attacker_mask = ENV.get_legal_actions_mask2(cur_state)
+        attacker_mask = ENV.get_legal_actions_mask1(cur_state)
+        #print(attacker_mask)
 
         no_moves_done = jax.lax.cond(jnp.all(attacker_mask == 0), lambda x: True, lambda x: False, None)
         action_attacker = select_action_stack(params_attacker, policy_net_stack, cur_nn_state, attacker_mask, rng_step)
@@ -177,7 +178,7 @@ def rollout(rng_input, init_state, init_nn_state, params_defender, params_attack
         rng, rng_step = jax.random.split(rng)
         action_defender = select_action_nash(params_defender, policy_net_stack, nn_state, rng_step)
         cur_state, cur_nn_state, reward, cur_done = env.step_stack(state, action_defender, 'defender')
-        attacker_mask = ENV.get_legal_actions_mask2(cur_state)
+        attacker_mask = ENV.get_legal_actions_mask1(cur_state)
 
         no_moves_done = jax.lax.cond(jnp.all(attacker_mask == 0), lambda x: True, lambda x: False, None)
         action_attacker = select_action_stack(params_attacker, policy_net_nash, cur_nn_state, attacker_mask, rng_step)
@@ -200,7 +201,7 @@ def rollout(rng_input, init_state, init_nn_state, params_defender, params_attack
         defender_mask = jnp.array([1,1,1])
         action_defender = select_action_stack(params_defender, policy_net_stack, nn_state, defender_mask, rng_step)
         cur_state, cur_nn_state, reward, cur_done = env.step_nash(state, action_defender, 'defender')
-        attacker_mask = ENV.get_legal_actions_mask2(cur_state)
+        attacker_mask = ENV.get_legal_actions_mask1(cur_state)
         #no_moves_done = jax.lax.cond(jnp.all(attacker_mask == 0), lambda x: True, lambda x: False, None)
 
         action_attacker = select_action_nash(params_attacker, policy_net_nash, cur_nn_state, rng_step)
@@ -222,6 +223,7 @@ def rollout(rng_input, init_state, init_nn_state, params_defender, params_attack
         #rng_step = rng
         #action_defender = random_policy(rng_step)
         action_defender = select_action_nash(params_defender, policy_net_nash, nn_state, rng_step)
+        #action_defender = get_closer2(state, 'defender')
         next_state, _, reward, cur_done = env.step_nash(state, action_defender, 'defender')
         #action_attacker = random_policy(rng_step)
         action_attacker =select_action_nash(params_attacker, policy_net_nash, nn_state, rng_step)
@@ -282,7 +284,7 @@ def rollout(rng_input, init_state, init_nn_state, params_defender, params_attack
     # Scan over the episode step loop
     initial_carry = (init_state, init_nn_state, False, rng_episode) #rng_episode
     
-    _, scan_out = jax.lax.scan(policy_step_nash_v_stack, initial_carry, None, length=steps_in_episode)
+    _, scan_out = jax.lax.scan(policy_step_nash_v_nash, initial_carry, None, length=steps_in_episode)
 
     # Unpack scan output
     actions_defender,actions_attacker, states, nn_states, rewards, dones, attacker_masks = scan_out
@@ -431,12 +433,13 @@ print(state.shape)
 
     
         
-stack_folder = 'data/jax_stack/2024-02-19 16:34:17.413038/'
-nash_folder = 'data/jax_nash/2024-02-19 17:00:02.875180/'
+stack_folder = 'data/jax_stack/2024-02-20 16:45:45.540627/'
+nash_folder = 'data/jax_nash/2024-02-20 16:59:48.570596/'
+pe_folder = 'data/jax_pe_stack/2024-02-20 17:35:27.995539/'
 
 
-with open(stack_folder+'jax_stack_defender.pickle', 'rb') as handle:
-    params_defender = pickle.load(handle)
+# with open(stack_folder+'jax_stack_defender.pickle', 'rb') as handle:
+#     params_defender = pickle.load(handle)
 # with open(stack_folder+'jax_stack_attacker.pickle', 'rb') as handle:
 #     params_attacker = pickle.load(handle)
 
@@ -445,8 +448,11 @@ with open(stack_folder+'jax_stack_defender.pickle', 'rb') as handle:
 with open(nash_folder+'jax_nash_attacker.pickle', 'rb') as handle:
     params_attacker = pickle.load(handle)
 
+with open(pe_folder+'jax_stack_defender.pickle', 'rb') as handle:
+    params_defender = pickle.load(handle)
+
 #rng_input = jax.random.PRNGKey(69679898967)
-rng_input = jax.random.PRNGKey(1025988)
+rng_input = jax.random.PRNGKey(1)
 policy_net_stack = hk.without_apply_rng(hk.transform(policy_network_stack))
 policy_net_nash = hk.without_apply_rng(hk.transform(policy_network_nash))
 # params_defender = policy_net.init(rng_input, nn_state, jnp.array([1,1,1]))
@@ -477,7 +483,7 @@ mask = jnp.logical_not(dones)
 
 
 batched_rollout = jax.vmap(rollout, in_axes=(0,0,0, None, None, None), out_axes=0)
-keys = jax.random.split(rng_input, num=50)
+keys = jax.random.split(rng_input, num=100)
 
 init_obs, initial_states, initial_nn_states = batched_env_reset(keys)
 all_actions_defender, all_actions_attacker, all_states, all_nn_states, all_returns, all_dones, all_rewards, all_attacker_masks = batched_rollout(keys,  initial_states, initial_nn_states, params_defender, params_attacker, STEPS_IN_EPISODE)
@@ -494,9 +500,13 @@ win_masks = all_masks[wins]
 loss_masks = all_masks[~wins]
 
 print('average win length:', jnp.mean(jnp.sum(win_masks, axis=1)))
+print('std win length:', jnp.std(jnp.sum(win_masks, axis=1)))
 print('average loss length:', jnp.mean(jnp.sum(loss_masks, axis=1)))
+print('std loss length:', jnp.std(jnp.sum(loss_masks, axis=1))) 
 
 
 
-
-
+print('rendering')
+states = convert_state_to_list(states)
+env.render(states, dones)
+env.make_gif(folder+'/rollout.gif')

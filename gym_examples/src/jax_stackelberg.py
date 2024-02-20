@@ -48,8 +48,10 @@ def breakpoint_if_contains_false(x):
 
 STEPS_IN_EPISODE = 50
 BATCH_SIZE = 32
-NUM_INNER_ITERS = 3
-NUM_ITERS = int(20000/NUM_INNER_ITERS)
+NUM_INNER_ITERS = 1
+NUM_ITERS = int(6000/NUM_INNER_ITERS)
+# NUM_INNER_ITERS = 3
+# NUM_ITERS = int(18000/NUM_INNER_ITERS) for pe
 is_train = True
 
 ENV = TwoPlayerDubinsCarEnv(
@@ -60,7 +62,7 @@ ENV = TwoPlayerDubinsCarEnv(
         max_steps=5,
         init_defender_position=[0,0,0],
         init_attacker_position=[2,2,0],
-        capture_radius=0.3,
+        capture_radius=0.25,
         goal_position=[0,-3],
         goal_radius=1,
         timestep=1,
@@ -303,7 +305,7 @@ def rollout(rng_input, init_state, init_nn_state, params_defender, params_attack
         action_defender = select_action(params_defender, policy_net, nn_state, defender_mask, rng_step)
         #action_defender = get_closer(state, 'defender')
         cur_state, cur_nn_state, reward, cur_done = env.step_stack(state, action_defender, 'defender')
-        attacker_mask = ENV.get_legal_actions_mask2(cur_state)
+        attacker_mask = ENV.get_legal_actions_mask1(cur_state)
         #jax.debug.print(f'mask: {attacker_mask}')
         #breakpoint_if_contains_false(attacker_mask)
         #check if there are no legal actions left, done is true
@@ -715,7 +717,7 @@ config = load_config("configs/config.yml")
     
 game_type = config['game']['type']
 timestamp = str(datetime.datetime.now())
-folder = 'data/jax_stack/'+timestamp
+folder = 'data/jax_pe_stack/'+timestamp
 #make folder
 import os
 if not os.path.exists(folder):
@@ -790,7 +792,7 @@ else:
     with open('data/jax_stack/jax_stack_value.pickle', 'rb') as handle:
         params_value = pickle.load(handle)
     #rng_input = jax.random.PRNGKey(69679898967)
-    rng_input = jax.random.PRNGKey(1144258)
+    rng_input = jax.random.PRNGKey(114258)
     policy_net = hk.without_apply_rng(hk.transform(policy_network))
     # params_defender = policy_net.init(rng_input, nn_state, jnp.array([1,1,1]))
     # params_attacker = policy_net.init(rng_input, nn_state, jnp.array([1,1,1]))

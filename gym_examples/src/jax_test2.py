@@ -38,7 +38,7 @@ from nashpy import Game
 
 STEPS_IN_EPISODE = 50
 BATCH_SIZE = 32
-NUM_ITERS = 6000
+NUM_ITERS = 4000
 is_train = True
 
 
