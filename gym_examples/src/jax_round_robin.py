@@ -151,8 +151,8 @@ def rollout(rng_input, init_state, init_nn_state, params_defender, params_attack
         state, nn_state, prev_done, rng = state_input
         rng, rng_step = jax.random.split(rng)
         defender_mask = jnp.array([1,1,1])
-        #action_defender = select_action_stack(params_defender, policy_net_stack, nn_state, defender_mask, rng_step)
-        action_defender =  get_closer2(state, 'defender')
+        action_defender = select_action_stack(params_defender, policy_net_stack, nn_state, defender_mask, rng_step)
+        #action_defender =  get_closer2(state, 'defender')
         cur_state, cur_nn_state, reward, cur_done = env.step_stack(state, action_defender, 'defender')
         attacker_mask = ENV.get_legal_actions_mask1(cur_state)
         #print(attacker_mask)
@@ -284,7 +284,7 @@ def rollout(rng_input, init_state, init_nn_state, params_defender, params_attack
     # Scan over the episode step loop
     initial_carry = (init_state, init_nn_state, False, rng_episode) #rng_episode
     
-    _, scan_out = jax.lax.scan(policy_step_nash_v_nash, initial_carry, None, length=steps_in_episode)
+    _, scan_out = jax.lax.scan(policy_step_stack_v_stack, initial_carry, None, length=steps_in_episode)
 
     # Unpack scan output
     actions_defender,actions_attacker, states, nn_states, rewards, dones, attacker_masks = scan_out
@@ -436,20 +436,21 @@ print(state.shape)
 stack_folder = 'data/jax_stack/2024-02-20 16:45:45.540627/'
 nash_folder = 'data/jax_nash/2024-02-20 16:59:48.570596/'
 pe_folder = 'data/jax_pe_stack/2024-02-20 17:35:27.995539/'
+stack_folder_long = 'data/jax_stack/2024-02-20 18:31:35.180587/'
 
 
-# with open(stack_folder+'jax_stack_defender.pickle', 'rb') as handle:
-#     params_defender = pickle.load(handle)
-# with open(stack_folder+'jax_stack_attacker.pickle', 'rb') as handle:
-#     params_attacker = pickle.load(handle)
+with open(stack_folder_long+'jax_stack_defender.pickle', 'rb') as handle:
+    params_defender = pickle.load(handle)
+with open(stack_folder+'jax_stack_attacker.pickle', 'rb') as handle:
+    params_attacker = pickle.load(handle)
 
 # with open(nash_folder+'jax_nash_defender.pickle', 'rb') as handle:
 #     params_defender = pickle.load(handle)
-with open(nash_folder+'jax_nash_attacker.pickle', 'rb') as handle:
-    params_attacker = pickle.load(handle)
+# with open(nash_folder+'jax_nash_attacker.pickle', 'rb') as handle:
+#     params_attacker = pickle.load(handle)
 
-with open(pe_folder+'jax_stack_defender.pickle', 'rb') as handle:
-    params_defender = pickle.load(handle)
+# with open(pe_folder+'jax_stack_defender.pickle', 'rb') as handle:
+#     params_defender = pickle.load(handle)
 
 #rng_input = jax.random.PRNGKey(69679898967)
 rng_input = jax.random.PRNGKey(1)

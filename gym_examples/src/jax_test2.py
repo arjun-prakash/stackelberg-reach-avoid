@@ -38,7 +38,7 @@ from nashpy import Game
 
 STEPS_IN_EPISODE = 50
 BATCH_SIZE = 32
-NUM_ITERS = 4000
+NUM_ITERS = 6000
 is_train = True
 
 
@@ -50,7 +50,7 @@ ENV = TwoPlayerDubinsCarEnv(
         max_steps=50,
         init_defender_position=[0,0,0],
         init_attacker_position=[2,2,0],
-        capture_radius=0.3,
+        capture_radius=0.1,
         goal_position=[0,-3],
         goal_radius=1,
         timestep=1,
@@ -609,7 +609,7 @@ config = load_config("configs/config.yml")
     
 game_type = config['game']['type']
 timestamp = str(datetime.datetime.now())
-folder = 'data/jax_nash/'+timestamp
+folder = 'data/jax_pe_nash/'+timestamp
 #make folder
 import os
 if not os.path.exists(folder):

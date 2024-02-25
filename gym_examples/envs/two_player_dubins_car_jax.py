@@ -58,13 +58,20 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         up = np.pi / 2
 
         # Example of setting random positions; adapt as necessary for your environment
-        defender_x = jax.random.uniform(subkey1, minval=-1, maxval=1)
+        #defender_x = jax.random.uniform(subkey1, minval=-1, maxval=1)
+        defender_x = jax.random.uniform(subkey1, minval=0, maxval=0)
         defender_y = jax.random.uniform(subkey1, minval=-2, maxval=-2)
         defender_theta = jax.random.uniform(subkey1, minval=up, maxval=up)
 
-        attacker_x = jax.random.uniform(subkey2, minval=-self.size, maxval=self.size)
-        attacker_y = jax.random.uniform(subkey2, minval=2, maxval=self.size)
+        # attacker_x = jax.random.uniform(subkey2, minval=-self.size, maxval=self.size)
+        # attacker_y = jax.random.uniform(subkey2, minval=2, maxval=self.size)
+        # attacker_theta = jax.random.uniform(subkey2, minval=down, maxval=down)
+        # inside barrier
+        attacker_x = jax.random.uniform(subkey2, minval=0.5, maxval=0.5)
+        attacker_y = jax.random.uniform(subkey2, minval=-2, maxval=-2)
         attacker_theta = jax.random.uniform(subkey2, minval=down, maxval=down)
+
+
 
         # Set initial state using provided positions or randomized ones
         state = {
@@ -97,7 +104,9 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         new_theta = state[player][2] + omega * self.timestep
         
         #change v_max depending on player
-        v_max = jax.lax.cond(player == 'attacker', lambda _: self.v_max, lambda _: self.v_max, None)
+        v_max = jax.lax.cond(player == 'attacker', lambda _: self.v_max, lambda _: self.v_max/2, None)
+        omega = jax.lax.cond(player == 'attacker', lambda _: omega/4, lambda _: omega, None)
+
 
         new_x = state[player][0] + v_max * jnp.cos(new_theta) * self.timestep
         new_y = state[player][1] + v_max * jnp.sin(new_theta) * self.timestep
@@ -165,7 +174,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
         # Determine if the episode is done (either win or loss)
       
 
-        return dist_capture, done
+        return -dist_capture, done
 
 
     def _reset_if_done(self, key, env_state, done):
@@ -179,7 +188,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
     def step_nash(self, env_state, action, player):
         state = env_state
         new_state = self._update_state(state, action, player)
-        reward, done = self._get_reward_done_nash(new_state, player)
+        reward, done = self._get_reward_done_pe(new_state, player)
         #new_state = self._reset_if_done(key, new_state, done)
         nn_state = self.encode_helper(new_state)
         return new_state, nn_state, reward, done
@@ -187,7 +196,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
     def step_stack(self, env_state, action, player):
         state = env_state
         new_state = self._update_state(state, action, player)
-        reward, done = self._get_reward_done_stack(new_state, player)
+        reward, done = self._get_reward_done_pe(new_state, player)
         #new_state = self._reset_if_done(key, new_state, done)
         nn_state = self.encode_helper(new_state)
         return new_state, nn_state, reward, done
