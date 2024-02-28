@@ -20,7 +20,7 @@ import matplotlib.pyplot as plt
 # import gymnasium as gym
 import numpy as np
 import optax
-from envs.two_player_dubins_car_jax import TwoPlayerDubinsCarEnv
+from envs.two_player_dubins_car_ca import ContinuousTwoPlayerEnv
 from matplotlib import cm
 from PIL import Image
 #from torch.utils.tensorboard import SummaryWriter
@@ -29,9 +29,57 @@ from functools import partial
 from jax_tqdm import scan_tqdm, loop_tqdm
 
 from jax import config
-config.update('jax_platform_name', 'gpu')
+# config.update('jax_platform_name', 'gpu')
+config.update("jax_debug_nans", True)
+#config.update("jax_enable_x64", True)
+
+#config.update('jax_disable_jit', True)
+
+def breakpoint_if_nonfinite(x):
+  is_finite = jnp.isfinite(x).all()
+  def true_fn(x):
+    pass
+  def false_fn(x):
+    jax.debug.breakpoint()
+  jax.lax.cond(is_finite, true_fn, false_fn, x)
+
+def breakpoint_if_nan(x):
+  is_nan = jnp.isnan(x).any()
+  def true_fn(x):
+    jax.debug.breakpoint()
+  def false_fn(x):
+    pass
+  jax.lax.cond(is_nan, true_fn, false_fn, x)
 
 
+def breakpoint_all_zeros(x):
+    is_zero = jnp.all(jnp.abs(x) <= 10e-6)
+    def true_fn(x):
+        jax.debug.breakpoint()
+    def false_fn(x):
+        pass
+    jax.lax.cond(is_zero, true_fn, false_fn, x)
+
+def breakpoint_if_negative(x):
+    is_negative = jnp.any(x < 0)
+    def true_fn(x):
+        jax.debug.breakpoint()
+    def false_fn(x):
+        pass
+    jax.lax.cond(is_negative, true_fn, false_fn, x)
+
+
+NUM_ITERS = 50000
+
+ENV = ContinuousTwoPlayerEnv(
+        size=3,
+        max_steps=50,
+        capture_radius=0.3,
+        goal_position=[0,-3],
+        goal_radius=1,
+        timestep=1,
+        v_max=0.25,
+    )  
 
 
 
@@ -50,9 +98,8 @@ def random_policy(key):
 
 
 def select_action(params, policy_net,  nn_state, key):
-    probs = policy_net.apply(params, nn_state)
-    probs = probs
-    return jax.random.choice(key, a=3, p=probs)
+    x,y = policy_net.apply(params, nn_state)
+    return x,y
 
 
 
@@ -78,54 +125,62 @@ def rollout(rng_input, params_defender, params_attacker, steps_in_episode):
         rng, rng_step = jax.random.split(rng)
         #action_defender = random_policy(rng_step)
         action_defender = select_action(params_defender, policy_net, nn_state, rng_step)
-        next_state, nn_state, reward, next_done = env.step(rng_step, state, action_defender, 'defender')
-        #action_attacker = random_policy(rng_step)
-        action_attacker =select_action(params_attacker, policy_net, nn_state, rng_step)
-        next_state, nn_state, reward, next_done = env.step(rng_step, next_state, action_attacker, 'attacker')
+        next_state, _, reward, cur_done = ENV.step(state, action_defender, 'defender')
+        action_attacker = select_action(params_attacker, policy_net, nn_state, rng_step) #update attacker based on previous since sim move
+        next_state, nn_state, reward, next_done = ENV.step(next_state, action_attacker, 'attacker')
+        next_done = jnp.logical_or(cur_done, next_done)
         done = jnp.logical_or(prev_done, next_done)
         carry = (next_state,nn_state, done, rng_step)
 
 
         return carry, (action_defender, action_attacker, next_state, nn_state,reward, done)
     
-    def calculate_discounted_returns(rewards, discount_factor):
-        """Calculate discounted cumulative returns using JAX vectorized operations."""
-        # Reverse the rewards array
+    # def calculate_discounted_returns(rewards, discount_factor):
+    #     """Calculate discounted cumulative returns using JAX vectorized operations."""
+    #     # Reverse the rewards array
+    #     rewards_reversed = jnp.flip(rewards, axis=0)
+        
+    #     # Calculate discounted returns
+    #     discounts = discount_factor ** jnp.arange(rewards_reversed.size)
+    #     discounted_rewards_reversed = rewards_reversed * discounts
+        
+    #     # Compute the cumulative sum in reverse order and then reverse it back
+    #     discounted_returns = jnp.flip(jnp.cumsum(discounted_rewards_reversed), axis=0)
+
+    #     return discounted_returns
+
+    def calculate_discounted_returns(rewards, discount_factor, mask):
+        # Step 1: Reverse rewards and mask
         rewards_reversed = jnp.flip(rewards, axis=0)
+        mask_reversed = jnp.flip(mask, axis=0)
         
-        # Calculate discounted returns
-        discounts = discount_factor ** jnp.arange(rewards_reversed.size)
-        discounted_rewards_reversed = rewards_reversed * discounts
+        # Step 2: Apply mask to rewards
+        masked_rewards_reversed = rewards_reversed * mask_reversed
         
-        # Compute the cumulative sum in reverse order and then reverse it back
-        discounted_returns = jnp.flip(jnp.cumsum(discounted_rewards_reversed), axis=0)
+        # Step 3: Calculate discounted rewards
+        discounts = discount_factor ** jnp.arange(masked_rewards_reversed.size)
+        discounted_rewards_reversed = masked_rewards_reversed * discounts
+        
+        # Step 4: Cumulative sum for reversed rewards
+        cumulative_rewards_reversed = jnp.cumsum(discounted_rewards_reversed)
+        
+        # Step 5: Reverse cumulative returns to original order
+        cumulative_returns = jnp.flip(cumulative_rewards_reversed, axis=0)
+        
+        return cumulative_returns
 
-        return discounted_returns
 
 
 
-    env = TwoPlayerDubinsCarEnv(
-        game_type=game_type,
-        num_actions=3,
-        size=3,
-        reward='',
-        max_steps=50,
-        init_defender_position=[0,0,0],
-        init_attacker_position=[2,2,0],
-        capture_radius=0.3,
-        goal_position=[0,-3],
-        goal_radius=1,
-        timestep=1,
-        v_max=0.25,
-        omega_max=30,
-    )   
+
+  
 
     policy_net = hk.without_apply_rng(hk.transform(policy_network))
     value_net = hk.without_apply_rng(hk.transform(value_network))
 
 
     rng_reset, rng_episode = jax.random.split(rng_input)
-    obs, state, nn_state = env.reset(rng_reset)
+    obs, state, nn_state = ENV.reset(rng_reset)
 
     
 
@@ -136,10 +191,11 @@ def rollout(rng_input, params_defender, params_attacker, steps_in_episode):
 
     # Unpack scan output
     actions_defender,actions_attacker, states, nn_states, rewards, dones = scan_out
+    masks = jnp.logical_not(dones)
 
     #update networks
 
-    returns = calculate_discounted_returns(rewards, 0.99)
+    returns = calculate_discounted_returns(rewards, 0.99, masks)
 
 
     return actions_defender, actions_attacker, states, nn_states, returns, dones
@@ -150,8 +206,8 @@ def rollout_body(i, carry):
     actions_defender, actions_attacker, states, nn_states, returns, dones = rollout(subkey, params_defender, params_attacker, 50)
 
     # Store the results of this rollout
-    all_actions_defender = all_actions_defender.at[i, :].set(actions_defender)
-    all_actions_attacker = all_actions_attacker.at[i, :].set(actions_attacker)
+    # all_actions_defender = all_actions_defender.at[i, :].set(actions_defender)
+    # all_actions_attacker = all_actions_attacker.at[i, :].set(actions_attacker)
     all_nn_states = all_nn_states.at[i, :].set(nn_states) 
     all_returns = all_returns.at[i, :].set(returns)
     all_dones = all_dones.at[i, :].set(dones)
@@ -208,8 +264,7 @@ def policy_network(observation):
             jax.nn.relu,
             hk.Linear(64),
             jax.nn.relu,
-            hk.Linear(env.num_actions),
-            jax.nn.softmax,
+            hk.Linear(2),
         ]
     )
     return net(observation)
@@ -236,66 +291,67 @@ def train():
 
     @jax.jit
     def loss_attacker(
-        params, value_params, observations, actions, returns, padding_mask
+        params_attacker, params_defender, rng_input
     ):
-        action_probabilities = policy_net.apply(params, observations)
-        #action_probabilities = jax.nn.softmax(action_probabilities)
-        log_probs = jnp.log(jnp.take_along_axis(
-                action_probabilities + 10e-6, actions[..., None], axis=-1
-            )
-        )
-
-        # Get baseline values
-        baseline_values = value_net.apply(value_params, observations).squeeze(-1)
-        advantage = returns - baseline_values
             
-        log_probs = log_probs.reshape(returns.shape)
-        masked_loss = padding_mask * (-log_probs * jax.lax.stop_gradient(advantage))
-        return jnp.sum(masked_loss) / jnp.sum(padding_mask)
+        #do a rollout
+        _, _, _, _, returns, dones = rollout(rng_input, params_defender, params_attacker, 50)
+        padding_mask = jnp.logical_not(dones)
+
+        returns = padding_mask * returns
+        cum_rets = jnp.cumsum(returns)
+        #jax.debug.print("🤯 {x} 🤯", x=cum_rets)
+
+
+        return -jnp.mean(cum_rets)
 
     @jax.jit
     def loss_defender(
-        params, value_params, observations, actions, returns, padding_mask
+        params_defender, params_attacker, rng_input
     ):
-        action_probabilities = policy_net.apply(params, observations)
-        #action_probabilities = jax.nn.softmax(action_probabilities)
-        log_probs = jnp.log(jnp.take_along_axis(
-                action_probabilities + 10e-6, actions[..., None], axis=-1
-            )
-        )
-        # Get baseline values
-        baseline_values = value_net.apply(value_params, observations)
-        advantage = returns - baseline_values.squeeze(-1)
+        _, _, _, _, returns, dones = rollout(rng_input, params_defender, params_attacker, 50)
+        padding_mask = jnp.logical_not(dones)
+        
+        returns = padding_mask * returns
+        cum_rets = jnp.cumsum(returns)
 
-        log_probs = log_probs.reshape(returns.shape)
-        masked_loss = padding_mask * (log_probs * jax.lax.stop_gradient(advantage))
-        return jnp.sum(masked_loss) / jnp.sum(padding_mask)
+        return jnp.mean(cum_rets)
 
 # Define update function
 
     @jax.jit
     def update_defender(
-        params, value_params, opt_state, observations, actions, returns, padding_mask
+        params_defender, params_attacker, opt_state, rng_input
     ):
         grads = jax.grad(loss_defender)(
-            params, value_params, observations, actions, returns, padding_mask
+            params_defender, params_attacker, rng_input
         )
+       
+
         updates, opt_state = optimizer_defender.update(
-            grads, params=params, state=opt_state
+            grads, params=params_defender, state=opt_state
         )
-        return optax.apply_updates(params, updates), opt_state, grads
+
+        norm = optax.global_norm(grads)
+        return optax.apply_updates(params_defender, updates), opt_state, grads
 
     @jax.jit
     def update_attacker(
-        params, value_params, opt_state, observations, actions, returns, padding_mask
+        params_attacker, params_defender, opt_state, rng_input
     ):
         grads = jax.grad(loss_attacker)(
-            params, value_params, observations, actions, returns, padding_mask
+            params_attacker, params_defender, rng_input
         )
-        updates, opt_state = optimizer_defender.update(
-            grads, params=params, state=opt_state
+        updates, opt_state = optimizer_attacker.update(
+            grads, params=params_attacker, state=opt_state
         )
-        return optax.apply_updates(params, updates), opt_state, grads
+
+
+
+
+
+        norm = optax.global_norm(grads)
+        return optax.apply_updates(params_attacker, updates), opt_state, grads
 
     @jax.jit
     def value_loss(params_value, observations, returns, padding_mask):
@@ -312,7 +368,7 @@ def train():
         new_params_value = optax.apply_updates(params_value, updates_value)
         return new_params_value, opt_state_value
     
-    @loop_tqdm(1000)
+    @loop_tqdm(NUM_ITERS)
     def training_step(i, train_state):
 
 
@@ -324,45 +380,45 @@ def train():
         all_actions_defender = jnp.zeros((num_episodes, steps_in_episode), dtype=jnp.int32)
         all_actions_attacker = jnp.zeros((num_episodes, steps_in_episode), dtype=jnp.int32)
         all_states = jnp.zeros((num_episodes, steps_in_episode,3))  # Add the shape of your state
-        all_nn_states = jnp.zeros((num_episodes, steps_in_episode,13))  # Add the shape of your state
+        all_nn_states = jnp.zeros((num_episodes, steps_in_episode,4))  # Add the shape of your state
         all_returns = jnp.zeros((num_episodes, steps_in_episode))
         all_dones = jnp.zeros((num_episodes, steps_in_episode), dtype=jnp.bool_)
         all_metrics = jnp.zeros((num_episodes, 4))
 
-        # Perform rollouts and collect data
+        #Perform rollouts and collect data
         final_rng_input, params_defender, params_attacker, params_value, all_actions_defender, all_actions_attacker, all_nn_states, all_returns, all_dones = \
             jax.lax.fori_loop(
                 0, num_episodes, 
                 rollout_body, 
                 (subkey, params_defender, params_attacker, params_value, all_actions_defender, all_actions_attacker, all_nn_states, all_returns, all_dones)
             )
+        
         all_masks = jnp.logical_not(all_dones)
+
+        #do a rollout
 
 
         # Update the attacker network
         params_attacker, opt_state_attacker, attacker_grads = update_attacker(
-            params_attacker, params_value, opt_state_attacker, all_nn_states, all_actions_attacker, all_returns, all_masks
+            params_attacker, params_defender, opt_state_attacker, subkey
         )
 
         # Update the defender network
         params_defender, opt_state_defender, defender_grads = update_defender(
-            params_defender, params_value, opt_state_defender, all_nn_states, all_actions_defender, all_returns, all_masks
+            params_defender, params_attacker, opt_state_defender, subkey
         )
         
-        # Update the value network
-        params_value, opt_state_value = update_value_network(
-            params_value, opt_state_value, all_nn_states, all_returns, all_masks
-        )
+      
 
 
         #get metrics
         # Calculate the average return across all episodes
         average_return = jnp.mean(jnp.sum(all_returns, axis=1))
-        attacker_norm = optax.global_norm(params_attacker)
-        defender_norm = optax.global_norm(params_defender)
-        current_value_loss = value_loss(params_value, all_nn_states, all_returns, all_masks)
+        attacker_norm = optax.global_norm(attacker_grads)
+        defender_norm = optax.global_norm(defender_grads)
+        #breakpoint_if_nonfinite(loss)
 
-        m = (average_return, attacker_norm, defender_norm, current_value_loss)
+        m = (average_return, attacker_norm, defender_norm, 0)
         metrics = metrics.at[i, :].set(m)
 
 
@@ -375,22 +431,6 @@ def train():
 
 
     
-    env = TwoPlayerDubinsCarEnv(
-            game_type=game_type,
-            num_actions=3,
-            size=3,
-            reward='',
-            max_steps=50,
-            init_defender_position=[0,0,0],
-            init_attacker_position=[2,2,0],
-            capture_radius=0.3,
-            goal_position=[0,-3],
-            goal_radius=1,
-            timestep=1,
-            v_max=0.25,
-            omega_max=30,
-        )   
-
 
     rng_input = jax.random.PRNGKey(0)
     #actions_defender, actions_attacker, states,rewards, dones = rollout(rng_input, steps_in_episode)
@@ -400,8 +440,8 @@ def train():
 
     steps_in_episode = 50
 
-    obs, state ,nn_state = env.reset(rng_input)
-    state = env.encode_helper(state)
+    obs, state ,nn_state = ENV.reset(rng_input)
+    state = ENV.encode_helper(state)
 
 
     
@@ -412,6 +452,7 @@ def train():
     policy_net = hk.without_apply_rng(hk.transform(policy_network))
     params_defender = policy_net.init(rng_input, nn_state)
     params_attacker = policy_net.init(rng_input, nn_state)
+
 
     value_net = hk.without_apply_rng(hk.transform(value_network))
     params_value = value_net.init(rng_input, nn_state)
@@ -425,8 +466,7 @@ def train():
     opt_state_attacker = optimizer_attacker.init(params_attacker)
     opt_state_defender = optimizer_defender.init(params_defender)
     opt_state_value = value_optimizer.init(params_value)
-
-    num_iters = 1000
+    num_iters = NUM_ITERS
 
     all_metrics = jnp.zeros((num_iters, 4))  # Assuming 4 metrics and 'num_iterations' training steps
 
@@ -453,35 +493,15 @@ config = load_config("configs/config.yml")
 game_type = config['game']['type']
 timestamp = str(datetime.datetime.now())
 
-env = TwoPlayerDubinsCarEnv(
-        game_type=game_type,
-        num_actions=3,
-        size=3,
-        reward='',
-        max_steps=5,
-        init_defender_position=[0,0,0],
-        init_attacker_position=[2,2,0],
-        capture_radius=0.3,
-        goal_position=[0,-3],
-        goal_radius=1,
-        timestep=1,
-        v_max=0.25,
-        omega_max=30,
-    )   
+ 
 
  
 
 rng_input = jax.random.PRNGKey(1)
 steps_in_episode = 50
-#actions_defender, actions_attacker, states,rewards, dones = rollout(rng_input, steps_in_episode)
-steps_in_episode = 50
-num_episodes = 100
 
-
-steps_in_episode = 50
-
-obs, state ,nn_state = env.reset(rng_input)
-state = env.encode_helper(state)
+obs, state ,nn_state = ENV.reset(rng_input)
+state = ENV.encode_helper(state)
 print(state.shape)
 
 
@@ -489,26 +509,32 @@ output = train()
 
 params_defender, params_attacker, params_value, opt_state_defender, opt_state_attacker, opt_state_value, rng_input, metrics = output
 
-#do a rollout
-rng_input = jax.random.PRNGKey(1125)
-steps_in_episode = 50
-policy_net = hk.without_apply_rng(hk.transform(policy_network))
-value_net = hk.without_apply_rng(hk.transform(value_network))
+print(metrics)
+plt.plot(metrics[:,0])
+plt.savefig('gifs/jax_debug/cont_return.png')
+plt.close()
+
+
+plt.plot(metrics[:,1])
+plt.savefig('gifs/jax_debug/cont_attacker_norm.png')
+plt.close()
+
+plt.plot(metrics[:,1])
+plt.savefig('gifs/jax_debug/cont_defender_norm.png')
+plt.close()
+
 
 
 
 actions_defender, actions_attacker, states, nn_states, returns, dones= rollout(rng_input, params_defender, params_attacker, steps_in_episode)
 #verage_return, attacker_norm, defender_norm, current_value_loss
-print(metrics)
-plt.plot(metrics[:,0])
-plt.savefig('gifs/jax/met1.png')
 
 
 
 
 print('rendering')
-# print(states)
+#print(states)
 states = convert_state_to_list(states)
-env.render(states, dones)
-env.make_gif('gifs/jax/test_train.gif')
+ENV.render(states, dones)
+ENV.make_gif('gifs/jax_debug/continuous.gif')
 
