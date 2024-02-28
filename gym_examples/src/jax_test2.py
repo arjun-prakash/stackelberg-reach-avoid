@@ -38,8 +38,12 @@ from nashpy import Game
 
 STEPS_IN_EPISODE = 50
 BATCH_SIZE = 32
-NUM_ITERS = 4000
+NUM_ITERS = 6000
 is_train = True
+
+print('Steps in episode:', STEPS_IN_EPISODE)
+print('Batch size:', BATCH_SIZE)
+print('Number of iters:', NUM_ITERS)
 
 
 ENV = TwoPlayerDubinsCarEnv(
@@ -50,7 +54,7 @@ ENV = TwoPlayerDubinsCarEnv(
         max_steps=50,
         init_defender_position=[0,0,0],
         init_attacker_position=[2,2,0],
-        capture_radius=0.3,
+        capture_radius=0.25,
         goal_position=[0,-3],
         goal_radius=1,
         timestep=1,
@@ -543,7 +547,7 @@ def train():
     
     env = ENV
 
-    rng_input = jax.random.PRNGKey(0)
+    rng_input = jax.random.PRNGKey(2)
     #actions_defender, actions_attacker, states,rewards, dones = rollout(rng_input, steps_in_episode)
 
 

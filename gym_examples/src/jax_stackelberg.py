@@ -52,6 +52,13 @@ NUM_INNER_ITERS = 1
 NUM_ITERS = int(6000/NUM_INNER_ITERS)
 # NUM_INNER_ITERS = 3
 # NUM_ITERS = int(18000/NUM_INNER_ITERS) for pe
+
+print('Steps in episode:', STEPS_IN_EPISODE)
+print('Batch size:', BATCH_SIZE)
+print('Number of inner iters:', NUM_INNER_ITERS)
+print('Number of iters:', NUM_ITERS)
+print('notes: added barrier condition')
+
 is_train = True
 
 ENV = TwoPlayerDubinsCarEnv(
@@ -652,7 +659,7 @@ def train():
     
     env = ENV
 
-    rng_input = jax.random.PRNGKey(0)
+    rng_input = jax.random.PRNGKey(4)
     #actions_defender, actions_attacker, states,rewards, dones = rollout(rng_input, steps_in_episode)
 
 
@@ -717,7 +724,7 @@ config = load_config("configs/config.yml")
     
 game_type = config['game']['type']
 timestamp = str(datetime.datetime.now())
-folder = 'data/jax_pe_stack/'+timestamp
+folder = 'data/jax_stack/'+timestamp
 #make folder
 import os
 if not os.path.exists(folder):

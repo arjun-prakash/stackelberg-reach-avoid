@@ -84,6 +84,44 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
         self.goal_position = self.goal_position
         return self.state
+    
+
+    def _check_boundaries_and_update_theta(self, state, player):
+        # Extract player's current position and theta
+        x, y, theta = state[player]
+        
+        # Check x-boundary
+        out_of_x_bounds = jnp.logical_or(x <= self.observation_space[player].low[0],
+                                        x >= self.observation_space[player].high[0])
+        
+        # Check y-boundary
+        out_of_y_bounds = jnp.logical_or(y <= self.observation_space[player].low[1],
+                                        y >= self.observation_space[player].high[1])
+
+        # Check if out of bounds in either x or y direction
+        out_of_bounds = jnp.logical_or(out_of_x_bounds, out_of_y_bounds)
+
+        # Update theta if out of bounds
+        new_theta = jnp.where(out_of_bounds, (jnp.pi + theta) % (2 * jnp.pi), theta)
+
+        return new_theta
+
+    def _update_state_with_boundaries(self, state, action, player):
+        # Your existing state update logic here...
+        # For demonstration, assuming new_state is computed as before
+        new_state = self._update_state(state, action, player)  # assuming this is your existing function
+        
+        # Update theta based on boundary conditions
+        new_theta = self._check_boundaries_and_update_theta(new_state, player)
+        
+        # Construct the new player state with updated theta
+        new_player_state = jnp.array([new_state[player][0], new_state[player][1], new_theta])
+        
+        # Update the state dictionary immutably with the new player state
+        updated_state = {**new_state, player: new_player_state}
+        
+        return updated_state
+
 
 
 
@@ -178,7 +216,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
     
     def step_nash(self, env_state, action, player):
         state = env_state
-        new_state = self._update_state(state, action, player)
+        new_state = self._update_state_with_boundaries(state, action, player)
         reward, done = self._get_reward_done_nash(new_state, player)
         #new_state = self._reset_if_done(key, new_state, done)
         nn_state = self.encode_helper(new_state)
@@ -186,7 +224,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
     
     def step_stack(self, env_state, action, player):
         state = env_state
-        new_state = self._update_state(state, action, player)
+        new_state = self._update_state_with_boundaries(state, action, player)
         reward, done = self._get_reward_done_stack(new_state, player)
         #new_state = self._reset_if_done(key, new_state, done)
         nn_state = self.encode_helper(new_state)
