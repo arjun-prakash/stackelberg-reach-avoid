@@ -127,8 +127,10 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
 
     def _update_state(self, state, action, player):
         # Map actions to omega values
-        omega = jnp.where(action == 0, -self.omega_max, 
-              jnp.where(action == 2, self.omega_max, 0))
+        # omega = jnp.where(action == 0, -self.omega_max, 
+        #       jnp.where(action == 2, self.omega_max, 0))
+
+        omega = action[0] * -self.omega_max + action[2] *self.omega_max
 
         #print('update',state)
         # Compute the new state
@@ -302,7 +304,7 @@ class TwoPlayerDubinsCarEnv(DubinsCarEnv):
             return is_legal
         # JIT compile the helper function for efficiency
 
-        attacker_actions = jnp.array([0,1,2])
+        attacker_actions = jnp.array([[1,0,0],[0,1,0],[0,0,1]])
 
         # Vectorize the apply_actions function to handle all action pairs in parallel
         batch_apply_actions = jax.vmap(apply_actions, in_axes=(None, 0))

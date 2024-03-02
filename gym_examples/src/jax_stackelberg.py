@@ -48,8 +48,8 @@ def breakpoint_if_contains_false(x):
 
 STEPS_IN_EPISODE = 50
 BATCH_SIZE = 32
-NUM_INNER_ITERS = 1
-NUM_ITERS = int(6000/NUM_INNER_ITERS)
+NUM_INNER_ITERS = 3
+NUM_ITERS = int(24000/NUM_INNER_ITERS)
 # NUM_INNER_ITERS = 3
 # NUM_ITERS = int(18000/NUM_INNER_ITERS) for pe
 
@@ -130,8 +130,8 @@ def get_q_matrix(rng_input, state, nn_state, params_defender, params_attacker, s
     
 
 
-    defender_actions = jnp.array([0,1,2])
-    attacker_actions = jnp.array([0,1,2])
+    defender_actions = jnp.array([[1,0,0],[0,1,0],[0,0,1]])
+    attacker_actions = jnp.array([[1,0,0],[0,1,0],[0,0,1]])
     action_pairs = jnp.array(list(itertools.product(defender_actions, attacker_actions)))
 
     # Vectorize the apply_actions function to handle all action pairs in parallel
@@ -273,6 +273,12 @@ def select_action(params, policy_net,  nn_state, mask, key):
     probs = policy_net.apply(params, nn_state, mask)
     return jax.random.choice(key, a=3, p=probs)
 
+def select_relaxed_action(params, policy_net,  nn_state, mask, key):
+    probs = policy_net.apply(params, nn_state, mask)
+    return probs
+
+
+
 def get_closer(state, player):
     dists = []
     for action in range(ENV.num_actions):
@@ -310,15 +316,17 @@ def rollout(rng_input, init_state, init_nn_state, params_defender, params_attack
         rng, rng_step = jax.random.split(rng)
         defender_mask = jnp.array([1,1,1])
         action_defender = select_action(params_defender, policy_net, nn_state, defender_mask, rng_step)
+        relaxed_defender_action = select_relaxed_action(params_defender, policy_net, nn_state, defender_mask, rng_step)
         #action_defender = get_closer(state, 'defender')
-        cur_state, cur_nn_state, reward, cur_done = env.step_stack(state, action_defender, 'defender')
+        cur_state, cur_nn_state, reward, cur_done = env.step_stack(state, relaxed_defender_action, 'defender')
         attacker_mask = ENV.get_legal_actions_mask1(cur_state)
         #jax.debug.print(f'mask: {attacker_mask}')
         #breakpoint_if_contains_false(attacker_mask)
         #check if there are no legal actions left, done is true
         no_moves_done = jax.lax.cond(jnp.all(attacker_mask == 0), lambda x: True, lambda x: False, None)
         action_attacker = select_action(params_attacker, policy_net, cur_nn_state, attacker_mask, rng_step)
-        next_state, next_nn_state, reward, next_done = env.step_stack(cur_state, action_attacker, 'attacker')
+        relaxed_attacker_action = select_relaxed_action(params_attacker, policy_net, cur_nn_state, attacker_mask, rng_step)
+        next_state, next_nn_state, reward, next_done = env.step_stack(cur_state, relaxed_attacker_action, 'attacker')
         
         next_done = jnp.logical_or(no_moves_done, next_done)
         next_done = jnp.logical_or(False, next_done)
@@ -485,7 +493,7 @@ def train():
     ):
 
         #action_mask = jnp.array([1,1,1])
-
+        #actions = jnp.mean(actions, axis=0)
         action_probabilities = policy_net.apply(params, observations, action_mask)
         #action_probabilities = jax.nn.softmax(action_probabilities)
         log_probs = jnp.log(jnp.take_along_axis(
@@ -505,6 +513,8 @@ def train():
     def loss_defender(
         params, value_params, observations, actions, returns, padding_mask, action_mask
     ):
+        #actions = jnp.mean(actions, axis=0)
+
         action_probabilities = policy_net.apply(params, observations, action_mask)
         #action_probabilities = jax.nn.softmax(action_probabilities)
         log_probs = jnp.log(jnp.take_along_axis(
@@ -724,7 +734,7 @@ config = load_config("configs/config.yml")
     
 game_type = config['game']['type']
 timestamp = str(datetime.datetime.now())
-folder = 'data/jax_stack/'+timestamp
+folder = 'data/jax_relaxed_stack/'+timestamp
 #make folder
 import os
 if not os.path.exists(folder):
