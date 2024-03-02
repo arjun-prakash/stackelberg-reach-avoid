@@ -47,9 +47,9 @@ def breakpoint_if_contains_false(x):
   jax.lax.cond(has_false, true_fn, false_fn, x)
 
 STEPS_IN_EPISODE = 50
-BATCH_SIZE = 8
+BATCH_SIZE = 32
 NUM_INNER_ITERS = 1
-NUM_ITERS = int(20000/NUM_INNER_ITERS)
+NUM_ITERS = int(5000/NUM_INNER_ITERS)
 # NUM_INNER_ITERS = 3
 # NUM_ITERS = int(18000/NUM_INNER_ITERS) for pe
 
@@ -471,15 +471,25 @@ def train():
         params_attacker, params_defender, rng_input
     ):
         
-        _, init_state, init_nn_state = ENV.reset(rng_input)
+        # _, init_state, init_nn_state = ENV.reset(rng_input)
             
-        _, _, _, _, returns, dones, _ = rollout(rng_input, init_state, init_nn_state, params_defender, params_attacker, 50)
-        padding_mask = jnp.logical_not(dones)
+        # _, _, _, _, returns, dones, _ = rollout(rng_input, init_state, init_nn_state, params_defender, params_attacker, 50)
+        # padding_mask = jnp.logical_not(dones)
 
-        returns = padding_mask * returns
-        cum_rets = jnp.cumsum(returns)
-        #jax.debug.print("🤯 {x} 🤯", x=cum_rets)
+        # returns = padding_mask * returns
+        # cum_rets = jnp.cumsum(returns)
+        # #jax.debug.print("🤯 {x} 🤯", x=cum_rets)
+        batched_rollout = jax.vmap(rollout, in_axes=(0,0,0, None, None, None), out_axes=0)
 
+        keys = jax.random.split(rng_input, num=BATCH_SIZE)
+        init_obs, initial_states, initial_nn_states = batched_env_reset(keys)
+
+        _, _, _, _, all_returns, all_dones, _ = batched_rollout(keys,  initial_states, initial_nn_states, params_defender, params_attacker, STEPS_IN_EPISODE)
+        all_masks =  jnp.logical_not(all_dones)
+
+        
+        returns = all_masks * all_returns
+        cum_rets = jnp.cumsum(returns,axis=1)      
 
         return -jnp.mean(cum_rets)
 
@@ -489,11 +499,20 @@ def train():
     ):
         _, init_state, init_nn_state = ENV.reset(rng_input)
             
-        _, _, _, _, returns, dones, _ = rollout(rng_input, init_state, init_nn_state, params_defender, params_attacker, 50)
-        padding_mask = jnp.logical_not(dones)
+        # _, _, _, _, returns, dones, _ = rollout(rng_input, init_state, init_nn_state, params_defender, params_attacker, 50)
+        # padding_mask = jnp.logical_not(dones)
+
+        batched_rollout = jax.vmap(rollout, in_axes=(0,0,0, None, None, None), out_axes=0)
+
+        keys = jax.random.split(rng_input, num=BATCH_SIZE)
+        init_obs, initial_states, initial_nn_states = batched_env_reset(keys)
+
+        _, _, _, _, all_returns, all_dones, _ = batched_rollout(keys,  initial_states, initial_nn_states, params_defender, params_attacker, STEPS_IN_EPISODE)
+        all_masks =  jnp.logical_not(all_dones)
+
         
-        returns = padding_mask * returns
-        cum_rets = jnp.cumsum(returns)
+        returns = all_masks * all_returns
+        cum_rets = jnp.cumsum(returns,axis=1)
 
         return jnp.mean(cum_rets)
 
@@ -658,9 +677,9 @@ def train():
     params_value = value_net.init(rng_input, nn_state)
 
     # Initialize Haiku optimizer
-    optimizer_defender = optax.radam(1e-4, b1=0.9, b2=0.9)
-    optimizer_attacker = optax.radam(1e-4, b1=0.9, b2=0.9)
-    value_optimizer = optax.radam(1e-4, b1=0.9, b2=0.9)
+    optimizer_defender = optax.radam(1e-6, b1=0.9, b2=0.9)
+    optimizer_attacker = optax.radam(1e-6, b1=0.9, b2=0.9)
+    value_optimizer = optax.radam(1e-6, b1=0.9, b2=0.9)
 
     # Initialize optimizer state
     opt_state_attacker = optimizer_attacker.init(params_attacker)
@@ -820,7 +839,7 @@ env.make_gif(folder+'/rollout.gif')
 # print(actions_defender)
 # print(actions_attacker)
 # print(dones)
-# print(mask*returns)
+print(mask*returns)
 
 
 # value_rollout = returns[0]
