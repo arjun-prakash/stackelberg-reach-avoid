@@ -54,11 +54,11 @@ class ContinuousTwoPlayerEnv:
         up = np.pi / 2
 
         # Example of setting random positions; adapt as necessary for your environment
-        defender_x = jax.random.uniform(subkey1, minval=-1, maxval=1)
-        defender_y = jax.random.uniform(subkey1, minval=-2, maxval=-2)
+        defender_x = jax.random.uniform(subkey1, minval=0, maxval=0)
+        defender_y = jax.random.uniform(subkey1, minval=-1, maxval=-1)
 
-        attacker_x = jax.random.uniform(subkey2, minval=-self.size, maxval=self.size)
-        attacker_y = jax.random.uniform(subkey2, minval=2, maxval=self.size)
+        attacker_x = jax.random.uniform(subkey2, minval=0, maxval=0)
+        attacker_y = jax.random.uniform(subkey2, minval=2.9, maxval=2.9)
 
         # Set initial state using provided positions or randomized ones
         state = {
@@ -74,82 +74,94 @@ class ContinuousTwoPlayerEnv:
 
     def _update_state(self, state, action, player):
         x, y = state[player]
-        step_size = self.v_max * self.timestep
+        step_size = jax.lax.cond(player == 'attacker', lambda _: self.v_max, lambda _: self.v_max/8, None)
+
+        #step_size = self.v_max * self.timestep
         new_x = x + action[0] * step_size
         new_y = y + action[1] * step_size
-        new_x, new_y = self._restrict_movement(x, y, new_x, new_y, state, player)
+        new_x, new_y = self._restrict_movement(x, y, new_x, new_y)
         new_state = {**state, player: jnp.array([new_x, new_y])}
         new_nn_state = self.encode_helper(new_state)
         return new_state, new_nn_state
 
-    # def _restrict_movement(self, x, y, new_x, new_y, player):
+    def _restrict_movement(self, x, y, new_x, new_y):
+        def within_radius():
+            return new_x, new_y
+
+        def outside_radius():
+            theta = jnp.arctan2(new_y - y, new_x - x)
+            return x + jnp.cos(theta) * self.v_max, y + jnp.sin(theta) * self.v_max
+
+        dist = jnp.sqrt((new_x - x)**2 + (new_y - y)**2)
+        return jax.lax.cond(dist <= self.v_max, within_radius, outside_radius)
+    
+
+    def _get_contraint(self, state):
+            dist_capture = jnp.linalg.norm(state['attacker'][:2] - state['defender'][:2]) - self.capture_radius - self.v_max
+            return -(dist_capture)
+
+
+
+
+
+
+    # def _restrict_movement(self, x, y, new_x, new_y, state, player):
     #     def within_radius():
     #         return new_x, new_y
 
-    #     def outside_radius():
+    #     def outside_radius(safe_step):
     #         theta = jnp.arctan2(new_y - y, new_x - x)
-    #         return x + jnp.cos(theta) * self.v_max, y + jnp.sin(theta) * self.v_max
+    #         return x + jnp.cos(theta) * safe_step, y + jnp.sin(theta) * safe_step
 
     #     dist = jnp.sqrt((new_x - x)**2 + (new_y - y)**2)
-    #     return jax.lax.cond(dist <= self.v_max, within_radius, outside_radius)
 
-    def _restrict_movement(self, x, y, new_x, new_y, state, player):
-        def within_radius():
-            return new_x, new_y
+    #     # Corrected: Compute distance from attacker to defender and adjust for capture radius
+    #     attacker_to_defender_dist = jnp.linalg.norm(state['attacker'][:2] - state['defender'][:2])
+    #     dist_capture = attacker_to_defender_dist - self.capture_radius - 0.01
 
-        def outside_radius(safe_step):
-            theta = jnp.arctan2(new_y - y, new_x - x)
-            return x + jnp.cos(theta) * safe_step, y + jnp.sin(theta) * safe_step
-
-        dist = jnp.sqrt((new_x - x)**2 + (new_y - y)**2)
-
-        # Corrected: Compute distance from attacker to defender and adjust for capture radius
-        attacker_to_defender_dist = jnp.linalg.norm(state['attacker'][:2] - state['defender'][:2])
-        dist_capture = attacker_to_defender_dist - self.capture_radius - 0.01
-
-        # Determine if the player is the attacker and adjust the safe_step accordingly
-        is_attacker = player == 'attacker'
-        safe_step = jax.lax.cond(is_attacker,
-                                lambda: jnp.minimum(self.v_max, dist_capture),
-                                lambda: self.v_max)
+    #     # Determine if the player is the attacker and adjust the safe_step accordingly
+    #     is_attacker = player == 'attacker'
+    #     safe_step = jax.lax.cond(is_attacker,
+    #                             lambda: jnp.minimum(self.v_max, dist_capture),
+    #                             lambda: self.v_max)
         
 
 
-        # Use safe_step to determine if movement adjustment is needed
-        action = jax.lax.cond(dist <= self.v_max,
-                            within_radius,
-                            lambda: outside_radius(safe_step))
-        return action
+    #     # Use safe_step to determine if movement adjustment is needed
+    #     action = jax.lax.cond(dist <= self.v_max,
+    #                         within_radius,
+    #                         lambda: outside_radius(safe_step))
+    #     return action
     
 
-    def _restrict_movement(self, x, y, new_x, new_y, state, player):
-        def within_radius():
-            return new_x, new_y
+    # def _restrict_movement(self, x, y, new_x, new_y):
+    #     def within_radius():
+    #         return new_x, new_y
  
-        def outside_radius(safe_step):
-            theta = jnp.arctan2(new_y - y, new_x - x)
-            return x + jnp.cos(theta) * safe_step, y + jnp.sin(theta) * safe_step
+    #     def outside_radius(safe_step):
+    #         theta = jnp.arctan2(new_y - y, new_x - x)
+    #         return x + jnp.cos(theta) * safe_step, y + jnp.sin(theta) * safe_step
 
-        dist = jnp.sqrt((new_x - x)**2 + (new_y - y)**2)
+    #     dist = jnp.sqrt((new_x - x)**2 + (new_y - y)**2)
 
-        # Corrected: Compute distance from attacker to defender and adjust for capture radius
-        attacker_to_defender_dist = jnp.linalg.norm(state['attacker'][:2] - state['defender'][:2])
-        dist_capture = attacker_to_defender_dist - self.capture_radius - 0.01
+    #     # Corrected: Compute distance from attacker to defender and adjust for capture radius
+    #     attacker_to_defender_dist = jnp.linalg.norm(state['attacker'][:2] - state['defender'][:2])
+    #     dist_capture = attacker_to_defender_dist - self.capture_radius - 0.01
 
-        # Determine if the player is the attacker and adjust the safe_step accordingly
-        is_attacker = player == 'attacker'
-        safe_step = jax.lax.cond(is_attacker,
-                                lambda: jnp.minimum(self.v_max, dist_capture),
-                                lambda: self.v_max)
-        #safe_step = jax.lax.cond(safe_step != self.v_max, lambda:-self.v_max, lambda:self.v_max)
+    #     # Determine if the player is the attacker and adjust the safe_step accordingly
+    #     is_attacker = player == 'attacker'
+    #     safe_step = jax.lax.cond(is_attacker,
+    #                             lambda: jnp.minimum(self.v_max, dist_capture),
+    #                             lambda: self.v_max)
+    #     #safe_step = jax.lax.cond(safe_step != self.v_max, lambda:-self.v_max, lambda:self.v_max)
                 
         
 
-        # Use safe_step to determine if movement adjustment is needed
-        action = jax.lax.cond(dist <= self.v_max,
-                            within_radius,
-                            lambda: outside_radius(safe_step))
-        return action
+    #     # Use safe_step to determine if movement adjustment is needed
+    #     action = jax.lax.cond(dist <= self.v_max,
+    #                         within_radius,
+    #                         lambda: outside_radius(safe_step))
+    #     return action
 
 
 
@@ -187,13 +199,23 @@ class ContinuousTwoPlayerEnv:
     def step(self, state, action, player):
         next_state, next_nn_state= self._update_state(state, action, player)
         reward, done = self._get_reward_done(state)
-        return next_state, next_nn_state, reward, done
+        g = self._get_contraint(state)
+        return next_state, next_nn_state, reward, done, g
 
 
 
     
     def encode_helper(self, state):
-        return jnp.concatenate([state['attacker'], state['defender']])
+        dist_goal = jnp.linalg.norm(state['attacker'] - self.goal_position)
+        dist_capture = jnp.linalg.norm(state['attacker'][:2] - state['defender'][:2])
+
+        return jnp.array([*state['attacker'], *state['defender'], dist_goal, dist_capture])
+
+
+       
+    
+
+   
 
 
 
