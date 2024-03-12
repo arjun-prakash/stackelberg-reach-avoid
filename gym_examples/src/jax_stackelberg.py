@@ -49,9 +49,10 @@ def breakpoint_if_contains_false(x):
 STEPS_IN_EPISODE = 50
 BATCH_SIZE = 1
 NUM_INNER_ITERS = 1
-NUM_ITERS = int(40000/NUM_INNER_ITERS)
-# NUM_INNER_ITERS = 3
-# NUM_ITERS = int(18000/NUM_INNER_ITERS) for pe
+NUM_ITERS = int(50000/NUM_INNER_ITERS)
+
+#NUM_ITERS = int(40000/NUM_INNER_ITERS)
+
 
 print('Steps in episode:', STEPS_IN_EPISODE)
 print('Batch size:', BATCH_SIZE)
@@ -476,7 +477,13 @@ def train():
 
         all_actions_defender, all_actions_attacker, all_states, all_nn_states, all_returns, all_dones, all_rewards, all_gs = batched_rollout(keys,  initial_states, initial_nn_states, params_defender, params_attacker, STEPS_IN_EPISODE)
 
-        all_masks = jnp.logical_not(all_dones)
+        all_masks = jnp.logical_not(all_dones)  
+        mean_g = jnp.max(all_gs)
+
+        
+        returns = all_masks * (all_returns - lamb* mean_g)
+        cum_rets = jnp.cumsum(returns,axis=1)
+
 
 
         # Update the attacker network (INNER UPDATE)
@@ -499,15 +506,19 @@ def train():
 
         #get metrics
         # Calculate the average return across all episodes
-        average_return = jnp.mean(jnp.sum(all_returns, axis=1))
+        average_return = jnp.mean(cum_rets) - lamb*mean_g
         #attacker_norm = optax.global_norm(attacker_grads)
         defender_norm = optax.global_norm(defender_grads)
         #bellman_error = jax.lax.stop_gradient(calc_nash_bellman_error(rng_input, params_defender, params_attacker))
 
-        m = (average_return, defender_norm, lamb)
+        def_metric, att_matric = verify_equilibrium(params_defender, params_attacker, rng_input)
+
+        m = (average_return, defender_norm, lamb, def_metric, att_matric)
         metrics = metrics.at[i, :].set(m)
         q_values = q_values.at[i, :].set(0)
         v_values = v_values.at[i, :].set(0)
+
+
 
 
 
@@ -517,6 +528,58 @@ def train():
 
     
 
+    @jax.jit
+    def evaluate_policy(params_defender, params_attacker, rng_input):
+        batched_rollout = jax.vmap(rollout, in_axes=(0, 0, 0, None, None, None), out_axes=0)
+        keys = jax.random.split(rng_input, num=BATCH_SIZE)
+        init_obs, initial_states, initial_nn_states = batched_env_reset(keys)
+        
+        _, _, _, _, all_returns, all_dones, _, all_gs = batched_rollout(
+            keys, initial_states, initial_nn_states, params_defender, params_attacker, STEPS_IN_EPISODE)
+        
+        all_masks =  jnp.logical_not(all_dones)
+        mean_g = jnp.max(all_gs)
+
+
+        
+        returns = all_masks * (all_returns)
+        cum_rets = jnp.cumsum(returns,axis=1) 
+        
+        # Calculate the expected return for the defender
+        def_expected_return = (jnp.mean(cum_rets) - lamb*mean_g) / BATCH_SIZE
+        
+        # Calculate the expected return for the attacker
+        att_expected_return = -(jnp.mean(cum_rets) - lamb*mean_g) / BATCH_SIZE
+        
+        return def_expected_return, att_expected_return
+
+    @jax.jit
+    def verify_equilibrium(params_defender, params_attacker, rng_input):
+        # Evaluate the current policies
+        def_expected_return, att_expected_return = evaluate_policy(params_defender, params_attacker, rng_input)
+        
+        # Evaluate the defender's policy against perturbed attacker's policies
+        perturbed_attacker_params = jax.tree_map(lambda x: x + jax.random.normal(rng_input, x.shape) * 0.01, params_attacker)
+        def_perturbed_returns = evaluate_policy(params_defender, perturbed_attacker_params, rng_input)[0]
+        
+        # Evaluate the attacker's policy against perturbed defender's policies
+        perturbed_defender_params = jax.tree_map(lambda x: x + jax.random.normal(rng_input, x.shape) * 0.01, params_defender)
+        att_perturbed_returns = evaluate_policy(perturbed_defender_params, params_attacker, rng_input)[1]
+        
+        # Check if the current policies are an equilibrium
+        # is_def_best_response = jnp.all(def_expected_return >= def_perturbed_returns)
+        # is_att_best_response = jnp.all(att_expected_return >= att_perturbed_returns)
+
+        # Calculate the maximum difference between the current and perturbed returns for the defender
+        def_diff = def_perturbed_returns - def_expected_return
+        
+        # Calculate the maximum difference between the current and perturbed returns for the attacker
+        att_diff = att_perturbed_returns - att_expected_return
+        
+        # Calculate the equilibrium metric as the maximum of the defender and attacker differences
+    
+        return def_diff, att_diff
+        
 
     
     env = ENV
@@ -540,9 +603,9 @@ def train():
 
     lamb = 1000.0
     # Initialize Haiku optimizer
-    optimizer_defender = optax.radam(1e-7, b1=0.9, b2=0.9)
-    optimizer_attacker = optax.radam(1e-7, b1=0.9, b2=0.9)
-    optimizer_lamb = optax.sgd(1e-1)
+    optimizer_defender = optax.radam(1e-5, b1=0.9, b2=0.9)
+    optimizer_attacker = optax.radam(1e-5, b1=0.9, b2=0.9)
+    optimizer_lamb = optax.adam(1e-1)
 
     # Initialize optimizer state
     opt_state_attacker = optimizer_attacker.init(params_attacker)
@@ -550,7 +613,7 @@ def train():
     opt_state_lamb= optimizer_lamb.init(lamb)
 
 
-    all_metrics = jnp.zeros((NUM_ITERS, 3))  # Assuming 4 metrics and 'num_iterations' training steps
+    all_metrics = jnp.zeros((NUM_ITERS, 5))  # Assuming 4 metrics and 'num_iterations' training steps
     q_values = jnp.zeros((NUM_ITERS, 3, 3))
     v_values = jnp.zeros((NUM_ITERS, 1))
 
@@ -566,6 +629,9 @@ def train():
 
     
  
+
+
+
 import jax
 import jax.numpy as jnp
 import itertools
@@ -629,10 +695,18 @@ if is_train:
     plt.savefig(folder+'/lambda.png')
     plt.close()
 
+    plt.plot(metrics[:,3])
+    plt.savefig(folder+'/def_metric.png')
+    plt.close()
+
+    plt.plot(metrics[:,4])
+    plt.savefig(folder+'/att_metric.png')
+    plt.close()
+
     save_params(params_defender, params_attacker, params_value, folder)
     rng_input = jax.random.PRNGKey(1125)
     df = pd.DataFrame(metrics)
-    df.columns = ['average_return', 'defender_norm', 'lambda']
+    df.columns = ['average_return', 'defender_norm', 'lambda', 'def_metric', 'att_metric']
 
     #calculate bellman error
     
