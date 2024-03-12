@@ -48,8 +48,8 @@ def breakpoint_if_contains_false(x):
 
 STEPS_IN_EPISODE = 50
 BATCH_SIZE = 1
-NUM_INNER_ITERS = 3
-NUM_ITERS = int(20000*3/NUM_INNER_ITERS)
+NUM_INNER_ITERS = 1
+NUM_ITERS = int(20000/NUM_INNER_ITERS)
 
 #NUM_ITERS = int(40000/NUM_INNER_ITERS)
 
@@ -132,7 +132,7 @@ def rollout(rng_input, init_state, init_nn_state, params_defender, params_attack
         rng, rng_step = jax.random.split(rng)
         action_defender = select_action(params_defender, policy_net, nn_state, rng_step)
         #action_defender = get_closer(state, 'defender')
-        cur_state, nn_state, reward, cur_done, g = env.step(state, action_defender, 'defender')
+        cur_state, cur_nn_state, reward, cur_done, g = env.step(state, action_defender, 'defender')
         #jax.debug.print(f'mask: {attacker_mask}')
         #breakpoint_if_contains_false(attacker_mask)
         #check if there are no legal actions left, done is true
@@ -487,11 +487,11 @@ def train():
 
 
         # Update the attacker network (INNER UPDATE)
-        inner_state = (params_defender, params_attacker, lamb, opt_state_attacker, rng_input)
-        _, params_attacker, _, opt_state_attacker, _ = jax.lax.fori_loop(0, NUM_INNER_ITERS, train_inner, inner_state)
-
+        new_params_attacker, opt_state_attacker, attacker_grads = update_attacker(
+            params_attacker, params_defender, opt_state_attacker, lamb, rng_input
+        )
         # Update the defender network
-        params_defender, opt_state_defender, defender_grads = update_defender(
+        new_params_defender, opt_state_defender, defender_grads = update_defender(
             params_defender, params_attacker, opt_state_defender, lamb, subkey
         )
         
@@ -511,7 +511,7 @@ def train():
         defender_norm = optax.global_norm(defender_grads)
         #bellman_error = jax.lax.stop_gradient(calc_nash_bellman_error(rng_input, params_defender, params_attacker))
 
-        def_metric, att_matric = verify_equilibrium(params_defender, params_attacker, rng_input)
+        def_metric, att_matric = verify_equilibrium(new_params_defender, new_params_attacker, rng_input)
 
         m = (average_return, defender_norm, lamb, def_metric, att_matric)
         metrics = metrics.at[i, :].set(m)
@@ -524,7 +524,7 @@ def train():
 
 
         # Return updated training state
-        return params_defender, params_attacker, lamb, opt_state_defender, opt_state_attacker, opt_state_value, subkey, metrics, q_values, v_values
+        return new_params_defender, new_params_attacker, lamb, opt_state_defender, opt_state_attacker, opt_state_value, subkey, metrics, q_values, v_values
 
     
 
@@ -650,7 +650,7 @@ config = load_config("configs/config.yml")
     
 game_type = config['game']['type']
 timestamp = str(datetime.datetime.now())
-folder = 'data/jax_cont_stack2/'+timestamp
+folder = 'data/jax_cont_nash/'+timestamp
 #make folder
 import os
 if not os.path.exists(folder):

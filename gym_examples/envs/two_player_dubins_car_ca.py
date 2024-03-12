@@ -74,7 +74,7 @@ class ContinuousTwoPlayerEnv:
 
     def _update_state(self, state, action, player):
         x, y = state[player]
-        step_size = jax.lax.cond(player == 'attacker', lambda _: self.v_max, lambda _: self.v_max/8, None)
+        step_size = jax.lax.cond(player == 'attacker', lambda _: self.v_max, lambda _: self.v_max/3, None)
 
         #step_size = self.v_max * self.timestep
         new_x = x + action[0] * step_size
